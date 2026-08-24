@@ -1,0 +1,30 @@
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# artifacts
+services/ml/artifacts/*.joblib
+services/ml/artifacts/*.json
+
+# env & secrets
+.env
+*.pem
+
+# data
+*.db
+*.sqlite
+/data/
+
+# node
+node_modules/
+
+# os
+.DS_Store
+
+# generated demo output
+/DEMO_RUN.md

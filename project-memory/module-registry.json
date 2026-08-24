@@ -1,0 +1,7 @@
+{
+ "paytwin_contracts": {"resp": "canonical schemas/enums/money/versions", "deps": [], "status": "complete"},
+ "paytwin_sim": {"resp": "seeded world, incident injection, webhook emitter, demo/flagship", "deps": ["paytwin_contracts"], "status": "complete"},
+ "paytwin_ml": {"resp": "features, training, metrics, detectors, graph RCA, RaR, twin, uplift, bandit", "deps": ["paytwin_contracts"], "status": "complete"},
+ "paytwin_api": {"resp": "REST/SSE, authz, policy engine, optimizer, executor, audit, commander, worker", "deps": ["paytwin_contracts", "paytwin_ml", "paytwin_sim"], "status": "complete"},
+ "apps/web": {"resp": "prototype UI (exact), API-bound with demo fallback", "deps": ["paytwin_api"], "status": "complete"}
+}

@@ -1,0 +1,8 @@
+{
+ "success-lr": {"stage": "validated", "kind": "sklearn LogisticRegression"},
+ "success-hgb": {"stage": "champion", "kind": "HistGradientBoosting + isotonic calibration"},
+ "detector-ensemble": {"stage": "champion", "kind": "EWMA + CUSUM + robust-z"},
+ "graph-rca": {"stage": "champion", "kind": "heterogeneous attribution + counterfactual mask (not GNN)"},
+ "uplift-tlearner": {"stage": "validated", "kind": "two-model T-learner (HistGB)"},
+ "bandit-linucb": {"stage": "shadow", "kind": "LinUCB offline evaluation"}
+}

@@ -1,0 +1,9 @@
+{
+ "entrypoints": ["paytwin_api.main:app", "paytwin_api.worker:main", "paytwin_sim.demo:main"],
+ "datastores": ["postgres (primary)", "sqlite (tests)", "redis (cache/rate-limit, optional)"],
+ "queues": ["outbox (pg) -> worker/SSE"],
+ "tables": 24,
+ "modules": ["paytwin_contracts", "paytwin_sim", "paytwin_ml", "paytwin_api", "apps/web"],
+ "events_consumed": ["webhooks/{provider}"],
+ "events_produced": ["payment.updated", "incident.opened", "incident.state_changed", "policy.decided", "action.executed", "audit.appended", "metric.snapshot"]
+}
