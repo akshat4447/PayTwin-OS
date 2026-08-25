@@ -69,6 +69,24 @@ from paytwin_api.routers.webhooks import router as webhooks_router  # noqa: E402
 
 app.include_router(webhooks_router)
 
+# API routers (bearer-authenticated, tenant-filtered)
+from paytwin_api.routers.overview import router as overview_router  # noqa: E402
+from paytwin_api.routers.incidents import router as incidents_router  # noqa: E402
+from paytwin_api.routers.twin import router as twin_router  # noqa: E402
+from paytwin_api.routers.policies import router as policies_router  # noqa: E402
+from paytwin_api.routers.commander import router as commander_router  # noqa: E402
+from paytwin_api.routers.experiments import router as experiments_router  # noqa: E402
+from paytwin_api.routers.models import router as models_router  # noqa: E402
+from paytwin_api.routers.audit import router as audit_router  # noqa: E402
+from paytwin_api.routers.reports import router as reports_router  # noqa: E402
+from paytwin_api.routers.chaos import router as chaos_router  # noqa: E402
+from paytwin_api.routers.stream import router as stream_router  # noqa: E402
+
+for _r in (overview_router, incidents_router, twin_router, policies_router,
+           commander_router, experiments_router, models_router, audit_router,
+           reports_router, chaos_router, stream_router):
+    app.include_router(_r)
+
 
 def _mount_web() -> None:
     """Serve the prototype UI (apps/web) at / when present."""

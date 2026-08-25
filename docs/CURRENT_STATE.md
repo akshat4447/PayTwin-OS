@@ -41,6 +41,14 @@ PHASE 13 — ML-002 TRAINING + REGISTRY (complete); next: AGENT-001 commander.
       action-intent -> typed draft -> POLICY EVALUATION ONLY (never dispatches;
       reply states "No customer or payment action was executed."), tool traces
       persisted to the hash-chained audit log (actor_role=agent).
+- [x] PHASE 15 API-001: routers {overview(+funnel/healthmap/merchants), incidents
+      (list/detail/execute@202/resolve), twin (byte-identical same-seed over HTTP),
+      policies (create/PATCH-versioning/blocked-log/historical preview), commander,
+      experiments, models (+risk_admin promote), audit (verify + jsonl/dossier export),
+      reports (recovery-batch markdown), chaos (seeded scenario injection via real
+      webhook ingest), stream (SSE per-org fan-out)}. Bearer auth via deps; RBAC
+      helpers require_write/require_admin; execute publishes policy_decision/action
+      on the bus; idempotent replay returns decision=duplicate.
 
 ## KEY BUGS FIXED IN PHASES 12–13 (root causes, not symptoms)
 1. Naive-datetime mixing: SQLite returns naive UTC values; `_payments_dicts` read them
@@ -72,18 +80,17 @@ QA-001 loadtest+EVALUATION numbers.
 - None.
 
 ## LAST TEST RESULTS
-- pytest tests/ -q → **115 passed** (14 new commander tests: grounding/citations,
-  twin+audit tools, BLOCKED and ALLOWED policy paths with zero executions, 6
-  adversarial refusals, tool-trace persistence + chain verify, no-LLM-key mode,
-  cross-tenant isolation).
+- pytest tests/ -q → **140 passed** (25 new API tests over httpx ASGI: auth 401s,
+  RBAC 403s for viewer, cross-tenant 404/list isolation, overview shape+values,
+  blocked & allowed & idempotent-duplicate execute paths with SSE events asserted,
+  byte-identical twin over HTTP, policy versioning + unknown-rule 422, model promote
+  RBAC, commander grounding over HTTP, audit verify/export, chaos injection).
 
 ## LAST STABLE COMMIT
-- 7d01bec "ML-002: training + registry ..." (AGENT-001 lands in the next commit)
+- 5f198b7 "AGENT-001: commander grounded in tenant-scoped tools ..." (API-001 lands
+  in the next commit)
 
 ## NEXT TASK
-- API-001 routers: paytwin_api/routers/{overview,incidents,twin,policies,commander,
-  experiments,models,audit,reports,chaos,stream}.py per docs/API_CONTRACTS.md; SSE via
-  services/bus.py; bearer auth via deps.current_principal; RBAC (finance_viewer
-  read-only, risk_admin for promote/policy edit); /api/incidents/{id}/execute wiring;
-  httpx ASGI tests in tests/test_api.py.
+- CAUSAL-002 uplift: T-learner (two HistGB heads) + LinUCB offline eval vs fixed
+  baseline on logged assignments (numpy) ~tests/test_causal.py.
 

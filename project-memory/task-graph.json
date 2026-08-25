@@ -251,7 +251,7 @@
   {
    "id": "API-001",
    "name": "REST routers + SSE + static UI serving",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "EXEC-001",
     "AGENT-001",
@@ -307,5 +307,5 @@
    ]
   }
  ],
- "note": "statuses corrected to repository truth post PHASE-14 AGENT-001; 115 tests green"
+ "note": "statuses corrected to repository truth post PHASE-15 API-001; 140 tests green"
 }
