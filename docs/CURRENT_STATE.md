@@ -1,120 +1,79 @@
 # CURRENT STATE
 
-## CURRENT PHASE
-PHASE 13 — ML-002 TRAINING + REGISTRY (complete); next: AGENT-001 commander.
+> **STATUS: COMPLETE — master completion audit passed 2026-08-25.**
+> Every claim below carries executable evidence per the Completion Evidence Rule.
+> Re-run anything via the probes at the bottom; docs/EVALUATION.md holds the numbers.
 
-## COMPLETED (verified in repo)
-- [x] PHASE 0/1 docs + project memory — commit edd79ae
-- [x] Monorepo scaffold, editable installs (contracts/sim/ml/api) — FOUNDATION-001..003
-      (25-table models + Alembic init migration, roundtrip verified)
-- [x] TENANCY-001 API-key auth + RBAC (paytwin_api/auth.py)
-- [x] CONN-001 connector framework: simulator/mockprovider/razorpay dialects + HMAC +
-      capabilities + deterministic perform_action
-- [x] PIPE-001/002 webhook ingest pipeline (verify → inbox idempotency → canonicalize →
-      late flags → outbox) + payment state machine
-- [x] FastAPI shell (/api/health, /api/meta, /webhooks/{provider})
-- [x] SIM-001 seeded generator with counterfactual ground truth (7 scenarios);
-      SIM-002 webhook emitter (demo builder still pending)
-- [x] ML-001 point-in-time features; ML-003 detector ensemble EWMA/CUSUM/robust-z/
-      pooled-z (5/5 scenarios detected, clean silent); ML-004 graph RCA w/ significance
-      gate + counterfactual mask; ML-005 RaR w/ 80% interval vs truth
-- [x] TWIN-001 seeded twin Monte-Carlo (7 scenarios); DECIDE-001 EV optimizer with
-      NO_ACTION floor; GOV-001 policy engine (7 hard guardrails + autonomy ladder);
-      EXEC-001 idempotent policy-gated audited executor; AUDIT-001 SHA-256 hash chain;
-      CAUSAL-001 experiments (deterministic assignment, lift+CI)
-- [x] PHASE 12 incident engine (incident_service.py): correlated detection w/ anti-noise
-      gates — window-overlap hierarchical corroboration, guard-banded binomial-tail
-      severity (alpha 0.01, excess>=3, SR drop>=3pts), most-specific-wins family
-      selection; flagship E2E journey green (tests/test_e2e_journey.py) — commit 08ef7ef
-- [x] PHASE 13 ML-002: services/ml/paytwin_ml/train.py — point-in-time dataset at 4
-      cohort granularities (leakage-tested), LogisticRegression + HistGradientBoosting
-      each isotonic-calibrated on time-separated fit/cal/test slices, ROC-AUC/PR-AUC/
-      Brier/ECE, deterministic under seed, joblib artifacts in services/ml/artifacts/;
-      services/api/paytwin_api/services/model_registry.py writes model_versions rows
-      (stage TRAINED, get-or-create idempotent). Quality asserted against the ORACLE
-      information ceiling (ADR-011) instead of an unreachable absolute AUC.
-- [x] PHASE 14 AGENT-001: services/api/paytwin_api/services/commander.py — intent
-      classifier (refusal patterns first, then action verbs, then info intents),
-      read-only tenant-scoped tools (get_incident, query_metrics, get_twin,
-      get_experiment, explain_decision, get_audit), evidence pack E1..En with
-      resolvable refs, deterministic composer (works with PAYTWIN_LLM_PROVIDER=none),
-      action-intent -> typed draft -> POLICY EVALUATION ONLY (never dispatches;
-      reply states "No customer or payment action was executed."), tool traces
-      persisted to the hash-chained audit log (actor_role=agent).
-- [x] PHASE 15 API-001: routers {overview(+funnel/healthmap/merchants), incidents
-      (list/detail/execute@202/resolve), twin (byte-identical same-seed over HTTP),
-      policies (create/PATCH-versioning/blocked-log/historical preview), commander,
-      experiments, models (+risk_admin promote), audit (verify + jsonl/dossier export),
-      reports (recovery-batch markdown), chaos (seeded scenario injection via real
-      webhook ingest), stream (SSE per-org fan-out)}. Bearer auth via deps; RBAC
-      helpers require_write/require_admin; execute publishes policy_decision/action
-      on the bus; idempotent replay returns decision=duplicate.
-- [x] PHASE 16 CAUSAL-002: services/ml/paytwin_ml/causal.py — T-learner uplift
-      (two HistGB regressor heads; uplift = mu1 − mu0), deterministic per seed,
-      direction sanity on seeded heterogeneous-treatment data; LinUCB (disjoint
-      linear models per arm) evaluated OFFLINE via logged-bandit replay against
-      fixed always-control/always-treat baselines — beats both on the seeded stream.
-- [x] PHASE 17 WEB-001: apps/web/index.html = paytwin-os-v2.html + ONE additive
-      <script> data layer (WEB-001 marker). Key via ?key= or localStorage; /api/meta
-      2.5s-timeout probe → LIVE mode hydrates ORG/MERCH/INC/POLICIES/BLOCKED/MODELS/S/
-      series into the EXISTING shapes, wraps sendChat→/api/commander/chat,
-      inject→/api/chaos/*, runSim→/api/twin/simulate, batchReport/auditExport→API
-      downloads, 5s polling refresh, env-pill badge LIVE; any failure keeps the local
-      engine with DEMO badge. Headless-Chrome verified: sidebar+topbar render, ZERO
-      console errors in both DEMO and LIVE modes (also fixed a pre-existing undefined-
-      icon SVG warning and made the ambient tick N-merchant-safe).
-- [x] PHASE 18 SIM-002/worker: services/sim/paytwin_sim/demo.py — `python -m
-      paytwin_sim.demo` seeds Nova Commerce × mgro/mfash/mtrav/msubs (modes 3/2/3/1)
-      + risk_admin/ops/finance API keys + RP-007/RP-014/RP-021 live policies, ingests
-      3h history (~14k payments) with the issuer_outage flagship on mgro @min-60,
-      trains+registers the success model, runs detection→policy→execute, measures an
-      experiment, verifies the audit chain and writes DEMO_RUN.md (measured numbers
-      only; HMAC signature verified end-to-end; ingest failures now raise instead of
-      silently dead-lettering). services/api/paytwin_api/worker.py — 30s loop:
-      detection sweep per org, autopilot executes best candidate ONLY when policy
-      allows, outbox dispatch marking; graceful Ctrl-C.
+## FINAL COMPLETION MATRIX
 
-## KEY BUGS FIXED IN PHASES 12–13 (root causes, not symptoms)
-1. Naive-datetime mixing: SQLite returns naive UTC values; `_payments_dicts` read them
-   via `.timestamp()` (= LOCAL interpretation on non-UTC hosts). Now normalized to
-   aware-UTC explicitly (`_aware_utc`).
-2. Wall-clock sweep anchoring: window was `[now−3h, now)` so replayed/fixed-time history
-   misaligned (planted outage landed inside the detector baseline ⇒ never fired). Window
-   now anchors on the newest event.
-3. `_related()` demanded identical dim dicts (wildcards rejected) ⇒ family corroboration
-   could never match. Fixed to wildcard-consistency + 20-min window overlap.
-4. Severity used whole-series baseline (polluted by the anomaly itself); replaced with
-   guard-banded pre-onset cohort baseline capped at 99.5% + exact binomial tail test.
-5. DND quiet hours evaluated UTC hour against IST window (policy.py); IST is explicit now.
-6. Executor presented whole-cohort GMV to AMOUNT_CAP; candidates now carry canary-slice
-   count/value (`slice_value_paise`) matching the twin's alloc_pct rollout.
-7. train.py feature names interleaved per-window while writes grouped per-stat —
-   columns silently mislabeled; caught by probing impossible column stats (a rate
-   column with std 180). Names now follow write order.
+| AREA | REQUIREMENT | STATUS | EVIDENCE |
+|---|---|---|---|
+| Tests | Full suite green | VERIFIED | **156 passed** (`pytest tests/ -q`) in main venv AND a from-scratch venv |
+| Database | Clean-DB migration | VERIFIED | `make migrate` → `b47531c6f9e6 init schema`, 26 tables (SQLite) **and** Postgres 16 container |
+| Backend | Webhook ingest (HMAC/idempotency/DLQ/outbox) | VERIFIED | suite: test_pipeline, test_connectors |
+| Backend | Payment state machine | VERIFIED | suite: test_models/test_pipeline |
+| ML | Success model train+registry | VERIFIED | evaluate.py: ROC-AUC .604 / ECE .0023 / reproducible; registry rows written by demo |
+| ML | Detector ensemble | VERIFIED | 5/5 planted detected (delays 0–20 min); clean worlds open **0** incidents (regression-tested) |
+| ML | Graph RCA | VERIFIED | top-1 4/5 · top-3 5/5 vs truth |
+| ML | Revenue-at-risk intervals | VERIFIED | coverage 5/5; point∈interval 5/5 (+adversarial unit test) |
+| Decisions | EV optimizer + NO_ACTION floor | VERIFIED | suite: test_governance |
+| Governance | Policy engine + autonomy ladder | VERIFIED | demo: 2 blocked / 2 approval-gated / violations 0 |
+| Executor | Idempotent policy-gated dispatch | VERIFIED | duplicate-request test returns same execution; demo executions persisted |
+| Audit | SHA-256 hash chain + verify/export | VERIFIED | demo chain ok with **5 records**; tamper test flips seq=3 |
+| Causal | Experiments + uplift + LinUCB | VERIFIED | offline replay: LinUCB 75.0 vs fixed 56.0 |
+| Agent | Commander read-only tools/refusal | VERIFIED | suite: test_commander (never dispatches; audited) |
+| API | REST routers + SSE + RBAC | VERIFIED | live curl: health 200; overview 401 w/o key → 200 w/ risk_admin key |
+| Frontend | UI bound to live API | VERIFIED | headless Chrome DOM: LIVE-hydration markers + 15 incident refs against demo DB |
+| Demo | Flagship E2E persists artifacts | VERIFIED | fresh run: incidents=1 (mgro HDFC×upi_intent P1), executions=4, audit=5 after process exit |
+| Demo hygiene | Dirty-DB guard | VERIFIED | refuses without PAYTWIN_DEMO_RESET=1 (unit-tested) |
+| Tooling | loadtest CLI | VERIFIED | measured 1,030.9 ev/s · p95 31.3 ms (`make loadtest`) |
+| Ops | Compose stack | VERIFIED | config valid; postgres+redis healthy; PG migration green |
+| CI | Pipeline config | VERIFIED | ci.yml YAML-valid; bandit/pip-audit/secret-scan all clean locally (CI parity) |
 
-## IN PROGRESS
-- (nothing)
+## FIXES LANDED IN THIS AUDIT (each with a regression test)
 
-## NOT STARTED (dependency order)
-API-001 routers+SSE, CAUSAL-002 uplift/LinUCB, WEB-001 frontend binding,
-SIM-002 demo builder + worker entrypoint, OPS-001/002 compose+Makefile+CI,
-QA-001 loadtest+EVALUATION numbers.
+1. **Demo persistence (was P0):** `run_flagship()` now commits — artifacts survived
+   reconnect; previously incidents/audit rolled back on exit and "chain ok" was vacuous.
+2. **Candidate-kind mismatch:** twin label `payment_links` → canonical
+   `ActionKind.PAYMENT_LINK` before writing candidates (Payment Links no longer FAILED_FINAL).
+3. **RaR interval math:** index-safe empirical p10/p90 + point∈interval invariant.
+4. **Deterministic training anchor:** episodes anchored on newest payment, not wall clock.
+5. **loadtest CLI:** missing `--url` + missing ASGI `base_url` fixed; real numbers captured.
+6. **Makefile migrate:** CWD-relative alembic path fixed (works from repo root, sqlite+pg).
+7. **Dirty-DB demo guard:** refuses without `PAYTWIN_DEMO_RESET=1`; adaptive scenario
+   offset (⅓ of span) keeps the persistence window observable at any span.
+8. **Detection false positives (P1s on healthy merchants):** admission is now dual-path —
+   statistical persistence into the next window OR overwhelming single-window evidence
+   (≥6 fails · drop≥8pts · RCA share≥75% · ≥2 dims) — plus MIN_N 25. Calibrated on
+   clean-vs-planted sweeps (seeds 42/7 × scales); clean worlds open zero incidents.
 
-## BLOCKERS
-- None.
+## REGRESSION STATUS
 
-## LAST TEST RESULTS
-- pytest tests/ -q → **148 passed** (4 new: world seeding shapes/modes/keys/policies,
-  worker run_once quiet pass, outbox dispatch marking, no-execution-without-policy-
-  allow guard).
+- `pytest tests/ -q` → **156 passed** (main venv, 168s) incl. 9 new audit tests:
+  persistence-across-reconnect, capability/kind alignment, RaR invariants, dirty-DB guard,
+  training determinism, loadtest CLI, clean-world silence.
+- Same suite green in a from-scratch venv (`pip install -e …` fresh).
 
-## LAST STABLE COMMIT
-- 177bbd2 "WEB-001: prototype UI bound to live API ..." (SIM-002/worker lands in
-  the next commit)
+## KNOWN LIMITATIONS (non-critical, documented)
 
-## NEXT TASK
-- OPS-001/002: infra/Dockerfile.api + infra/docker-compose.yml (postgres:16 :5433,
-  redis:8 :6380, api, worker) + Makefile (dev/api/worker/migrate/seed/demo/test/
-  loadtest/verify) + .env.example + README.md quickstart + .github/workflows/ci.yml;
-  then QA-001 loadtest.py + EVALUATION.md measured numbers + final commit.
+- Neural backends (FT-Transformer/TabPFN/TimesFM/GNN) stubbed behind ModelBackend — CPU-only
+  build machine; measured baselines shipped instead (docs/KNOWN_LIMITATIONS.md).
+- Demo action admission is time-aware: IST quiet-hours can approval-gate the demo's best
+  candidate (honestly reported in DEMO_RUN.md as approval-gated rather than executed).
+- Razorpay connector sandbox-ready only (no production keys available anywhere in this build).
+- Playwright browser suite skipped (disk headroom); journey covered by backend E2E +
+  headless-Chrome DOM hydration checks.
+
+## RE-RUN THE EVIDENCE
+
+```bash
+source .venv/bin/activate
+python -m pytest tests/ -q                    # 156 passed
+rm -f /tmp/final.db && PAYTWIN_DATABASE_URL=sqlite:////tmp/final.db \
+  python -m paytwin_sim.demo                  # flagship E2E + DEMO_RUN.md
+PAYTWIN_DEMO_RESET=1 make demo                # idempotent re-run path
+make migrate && make loadtest                 # migration + perf numbers
+python scripts/evaluate.py                    # every EVALUATION.md number
+cd infra && docker compose up -d postgres redis && cd .. && make migrate
+```
 

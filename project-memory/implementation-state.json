@@ -1,7 +1,7 @@
 {
- "phase": "PHASE-2/3-FOUNDATION",
- "updated": "2026-08-25",
- "next_task": "FOUNDATION-003 models+alembic",
- "blockers": [],
- "note": "corrected: earlier file falsely claimed BUILD-COMPLETE"
+  "phase": "COMPLETE \u2014 master audit passed (all tasks evidence-backed)",
+  "updated": "2026-08-25",
+  "next_task": "none \u2014 see docs/CURRENT_STATE.md final matrix",
+  "blockers": [],
+  "note": "156 pytest green (x2 venvs); demo persists artifacts; clean worlds silent; sqlite+postgres migrations verified"
 }

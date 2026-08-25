@@ -1,311 +1,311 @@
 {
- "version": 1,
- "updated": "2026-08-25",
- "tasks": [
-  {
-   "id": "FOUNDATION-001",
-   "name": "Monorepo scaffold + venv + deps",
-   "status": "complete",
-   "dependencies": [],
-   "tests": [
-    "pip install ok"
-   ]
-  },
-  {
-   "id": "FOUNDATION-002",
-   "name": "contracts package (canonical events, enums, money)",
-   "status": "complete",
-   "dependencies": [
-    "FOUNDATION-001"
-   ],
-   "tests": [
-    "schema round-trip test"
-   ]
-  },
-  {
-   "id": "FOUNDATION-003",
-   "name": "DB models + Alembic migration (24 tables)",
-   "status": "complete",
-   "dependencies": [
-    "FOUNDATION-002"
-   ],
-   "tests": [
-    "migration test",
-    "constraint test"
-   ]
-  },
-  {
-   "id": "TENANCY-001",
-   "name": "Principal resolution + tenant scoping + isolation tests",
-   "status": "complete",
-   "dependencies": [
-    "FOUNDATION-003"
-   ],
-   "tests": [
-    "cross-tenant denial test"
-   ]
-  },
-  {
-   "id": "CONN-001",
-   "name": "Connector framework + Simulator/MockProvider/Razorpay dialects",
-   "status": "complete",
-   "dependencies": [
-    "FOUNDATION-002"
-   ],
-   "tests": [
-    "two-connector same-flow test"
-   ]
-  },
-  {
-   "id": "PIPE-001",
-   "name": "Webhook ingress + HMAC + inbox idempotency + DLQ + outbox",
-   "status": "complete",
-   "dependencies": [
-    "CONN-001"
-   ],
-   "tests": [
-    "dup/late/malformed/reorder/replay tests"
-   ]
-  },
-  {
-   "id": "PIPE-002",
-   "name": "Worker: canonicalizer, payment state machine, SSE fanout",
-   "status": "complete",
-   "dependencies": [
-    "PIPE-001"
-   ],
-   "tests": [
-    "state machine tests"
-   ]
-  },
-  {
-   "id": "SIM-001",
-   "name": "Seeded world generator + 7 incident injections + ground truth",
-   "status": "complete",
-   "dependencies": [
-    "FOUNDATION-002"
-   ],
-   "tests": [
-    "reproducibility test"
-   ]
-  },
-  {
-   "id": "SIM-002",
-   "name": "Webhook emitter + demo/flagship scenario builder",
-   "status": "in_progress",
-   "dependencies": [
-    "SIM-001"
-   ],
-   "tests": [
-    "flagship e2e test"
-   ]
-  },
-  {
-   "id": "ML-001",
-   "name": "Feature engine (point-in-time) + leakage tests",
-   "status": "complete",
-   "dependencies": [
-    "PIPE-002"
-   ],
-   "tests": [
-    "leakage tests"
-   ]
-  },
-  {
-   "id": "ML-002",
-   "name": "Training: LR + HistGB + isotonic + metrics + registry lifecycle",
-   "status": "complete",
-   "dependencies": [
-    "ML-001"
-   ],
-   "tests": [
-    "determinism test",
-    "metric sanity tests"
-   ]
-  },
-  {
-   "id": "ML-003",
-   "name": "Detectors EWMA/CUSUM/robust-z vs ground truth",
-   "status": "complete",
-   "dependencies": [
-    "ML-001"
-   ],
-   "tests": [
-    "precision/recall/delay tests"
-   ]
-  },
-  {
-   "id": "ML-004",
-   "name": "Graph RCA + Top-1/Top-3 eval",
-   "status": "complete",
-   "dependencies": [
-    "ML-003"
-   ],
-   "tests": [
-    "rca accuracy tests"
-   ]
-  },
-  {
-   "id": "ML-005",
-   "name": "Revenue-at-risk + interval validation",
-   "status": "complete",
-   "dependencies": [
-    "ML-004"
-   ],
-   "tests": [
-    "rar vs truth test"
-   ]
-  },
-  {
-   "id": "TWIN-001",
-   "name": "Digital twin Monte-Carlo (7 scenarios) + reproducibility",
-   "status": "complete",
-   "dependencies": [
-    "SIM-001"
-   ],
-   "tests": [
-    "seed determinism test"
-   ]
-  },
-  {
-   "id": "CAUSAL-001",
-   "name": "Experiments: assignment/outcome/lift+CI",
-   "status": "complete",
-   "dependencies": [
-    "PIPE-002"
-   ],
-   "tests": [
-    "lift from stored events test"
-   ]
-  },
-  {
-   "id": "CAUSAL-002",
-   "name": "T-learner uplift + LinUCB offline eval",
-   "status": "complete",
-   "dependencies": [
-    "ML-002"
-   ],
-   "tests": [
-    "uplift sanity tests"
-   ]
-  },
-  {
-   "id": "DECIDE-001",
-   "name": "EV optimizer incl NO_ACTION + constraints",
-   "status": "complete",
-   "dependencies": [
-    "TWIN-001",
-    "ML-005"
-   ],
-   "tests": [
-    "no-action tests"
-   ]
-  },
-  {
-   "id": "GOV-001",
-   "name": "Policy engine (typed rules, versions, autonomy gates)",
-   "status": "complete",
-   "dependencies": [
-    "DECIDE-001"
-   ],
-   "tests": [
-    "block tests",
-    "violations=0 test"
-   ]
-  },
-  {
-   "id": "EXEC-001",
-   "name": "Idempotent executor + state machine + connector dispatch",
-   "status": "complete",
-   "dependencies": [
-    "GOV-001",
-    "CONN-001"
-   ],
-   "tests": [
-    "duplicate execution test"
-   ]
-  },
-  {
-   "id": "AGENT-001",
-   "name": "Commander: tools + evidence pack + composer + refusal",
-   "status": "complete",
-   "dependencies": [
-    "ML-004",
-    "GOV-001"
-   ],
-   "tests": [
-    "grounding/refusal tests"
-   ]
-  },
-  {
-   "id": "AUDIT-001",
-   "name": "Hash-chained audit + exports + verify",
-   "status": "complete",
-   "dependencies": [
-    "GOV-001"
-   ],
-   "tests": [
-    "chain verify test"
-   ]
-  },
-  {
-   "id": "API-001",
-   "name": "REST routers + SSE + static UI serving",
-   "status": "complete",
-   "dependencies": [
-    "EXEC-001",
-    "AGENT-001",
-    "AUDIT-001"
-   ],
-   "tests": [
-    "api integration tests"
-   ]
-  },
-  {
-   "id": "WEB-001",
-   "name": "Prototype UI bound to live API + demo fallback",
-   "status": "complete",
-   "dependencies": [
-    "API-001"
-   ],
-   "tests": [
-    "headless chrome check"
-   ]
-  },
-  {
-   "id": "OPS-001",
-   "name": "Docker compose + Dockerfiles + Makefile + .env.example",
-   "status": "not_started",
-   "dependencies": [
-    "API-001"
-   ],
-   "tests": [
-    "compose config test"
-   ]
-  },
-  {
-   "id": "OPS-002",
-   "name": "CI pipeline + security scans",
-   "status": "not_started",
-   "dependencies": [
-    "OPS-001"
-   ],
-   "tests": [
-    "ci yaml lint"
-   ]
-  },
-  {
-   "id": "QA-001",
-   "name": "Full test matrix green + load test + EVALUATION.md numbers",
-   "status": "not_started",
-   "dependencies": [
-    "WEB-001",
-    "OPS-002"
-   ],
-   "tests": [
-    "pytest full run"
-   ]
-  }
- ],
- "note": "statuses corrected post PHASE-18 SIM-002/worker; 148 tests green"
+  "version": 1,
+  "updated": "2026-08-25",
+  "tasks": [
+    {
+      "id": "FOUNDATION-001",
+      "name": "Monorepo scaffold + venv + deps",
+      "status": "complete",
+      "dependencies": [],
+      "tests": [
+        "pip install ok"
+      ]
+    },
+    {
+      "id": "FOUNDATION-002",
+      "name": "contracts package (canonical events, enums, money)",
+      "status": "complete",
+      "dependencies": [
+        "FOUNDATION-001"
+      ],
+      "tests": [
+        "schema round-trip test"
+      ]
+    },
+    {
+      "id": "FOUNDATION-003",
+      "name": "DB models + Alembic migration (24 tables)",
+      "status": "complete",
+      "dependencies": [
+        "FOUNDATION-002"
+      ],
+      "tests": [
+        "migration test",
+        "constraint test"
+      ]
+    },
+    {
+      "id": "TENANCY-001",
+      "name": "Principal resolution + tenant scoping + isolation tests",
+      "status": "complete",
+      "dependencies": [
+        "FOUNDATION-003"
+      ],
+      "tests": [
+        "cross-tenant denial test"
+      ]
+    },
+    {
+      "id": "CONN-001",
+      "name": "Connector framework + Simulator/MockProvider/Razorpay dialects",
+      "status": "complete",
+      "dependencies": [
+        "FOUNDATION-002"
+      ],
+      "tests": [
+        "two-connector same-flow test"
+      ]
+    },
+    {
+      "id": "PIPE-001",
+      "name": "Webhook ingress + HMAC + inbox idempotency + DLQ + outbox",
+      "status": "complete",
+      "dependencies": [
+        "CONN-001"
+      ],
+      "tests": [
+        "dup/late/malformed/reorder/replay tests"
+      ]
+    },
+    {
+      "id": "PIPE-002",
+      "name": "Worker: canonicalizer, payment state machine, SSE fanout",
+      "status": "complete",
+      "dependencies": [
+        "PIPE-001"
+      ],
+      "tests": [
+        "state machine tests"
+      ]
+    },
+    {
+      "id": "SIM-001",
+      "name": "Seeded world generator + 7 incident injections + ground truth",
+      "status": "complete",
+      "dependencies": [
+        "FOUNDATION-002"
+      ],
+      "tests": [
+        "reproducibility test"
+      ]
+    },
+    {
+      "id": "SIM-002",
+      "name": "Webhook emitter + demo/flagship scenario builder",
+      "status": "complete",
+      "dependencies": [
+        "SIM-001"
+      ],
+      "tests": [
+        "flagship e2e test"
+      ]
+    },
+    {
+      "id": "ML-001",
+      "name": "Feature engine (point-in-time) + leakage tests",
+      "status": "complete",
+      "dependencies": [
+        "PIPE-002"
+      ],
+      "tests": [
+        "leakage tests"
+      ]
+    },
+    {
+      "id": "ML-002",
+      "name": "Training: LR + HistGB + isotonic + metrics + registry lifecycle",
+      "status": "complete",
+      "dependencies": [
+        "ML-001"
+      ],
+      "tests": [
+        "determinism test",
+        "metric sanity tests"
+      ]
+    },
+    {
+      "id": "ML-003",
+      "name": "Detectors EWMA/CUSUM/robust-z vs ground truth",
+      "status": "complete",
+      "dependencies": [
+        "ML-001"
+      ],
+      "tests": [
+        "precision/recall/delay tests"
+      ]
+    },
+    {
+      "id": "ML-004",
+      "name": "Graph RCA + Top-1/Top-3 eval",
+      "status": "complete",
+      "dependencies": [
+        "ML-003"
+      ],
+      "tests": [
+        "rca accuracy tests"
+      ]
+    },
+    {
+      "id": "ML-005",
+      "name": "Revenue-at-risk + interval validation",
+      "status": "complete",
+      "dependencies": [
+        "ML-004"
+      ],
+      "tests": [
+        "rar vs truth test"
+      ]
+    },
+    {
+      "id": "TWIN-001",
+      "name": "Digital twin Monte-Carlo (7 scenarios) + reproducibility",
+      "status": "complete",
+      "dependencies": [
+        "SIM-001"
+      ],
+      "tests": [
+        "seed determinism test"
+      ]
+    },
+    {
+      "id": "CAUSAL-001",
+      "name": "Experiments: assignment/outcome/lift+CI",
+      "status": "complete",
+      "dependencies": [
+        "PIPE-002"
+      ],
+      "tests": [
+        "lift from stored events test"
+      ]
+    },
+    {
+      "id": "CAUSAL-002",
+      "name": "T-learner uplift + LinUCB offline eval",
+      "status": "complete",
+      "dependencies": [
+        "ML-002"
+      ],
+      "tests": [
+        "uplift sanity tests"
+      ]
+    },
+    {
+      "id": "DECIDE-001",
+      "name": "EV optimizer incl NO_ACTION + constraints",
+      "status": "complete",
+      "dependencies": [
+        "TWIN-001",
+        "ML-005"
+      ],
+      "tests": [
+        "no-action tests"
+      ]
+    },
+    {
+      "id": "GOV-001",
+      "name": "Policy engine (typed rules, versions, autonomy gates)",
+      "status": "complete",
+      "dependencies": [
+        "DECIDE-001"
+      ],
+      "tests": [
+        "block tests",
+        "violations=0 test"
+      ]
+    },
+    {
+      "id": "EXEC-001",
+      "name": "Idempotent executor + state machine + connector dispatch",
+      "status": "complete",
+      "dependencies": [
+        "GOV-001",
+        "CONN-001"
+      ],
+      "tests": [
+        "duplicate execution test"
+      ]
+    },
+    {
+      "id": "AGENT-001",
+      "name": "Commander: tools + evidence pack + composer + refusal",
+      "status": "complete",
+      "dependencies": [
+        "ML-004",
+        "GOV-001"
+      ],
+      "tests": [
+        "grounding/refusal tests"
+      ]
+    },
+    {
+      "id": "AUDIT-001",
+      "name": "Hash-chained audit + exports + verify",
+      "status": "complete",
+      "dependencies": [
+        "GOV-001"
+      ],
+      "tests": [
+        "chain verify test"
+      ]
+    },
+    {
+      "id": "API-001",
+      "name": "REST routers + SSE + static UI serving",
+      "status": "complete",
+      "dependencies": [
+        "EXEC-001",
+        "AGENT-001",
+        "AUDIT-001"
+      ],
+      "tests": [
+        "api integration tests"
+      ]
+    },
+    {
+      "id": "WEB-001",
+      "name": "Prototype UI bound to live API + demo fallback",
+      "status": "complete",
+      "dependencies": [
+        "API-001"
+      ],
+      "tests": [
+        "headless chrome check"
+      ]
+    },
+    {
+      "id": "OPS-001",
+      "name": "Docker compose + Dockerfiles + Makefile + .env.example",
+      "status": "complete",
+      "dependencies": [
+        "API-001"
+      ],
+      "tests": [
+        "compose config test"
+      ]
+    },
+    {
+      "id": "OPS-002",
+      "name": "CI pipeline + security scans",
+      "status": "complete",
+      "dependencies": [
+        "OPS-001"
+      ],
+      "tests": [
+        "ci yaml lint"
+      ]
+    },
+    {
+      "id": "QA-001",
+      "name": "Full test matrix green + load test + EVALUATION.md numbers",
+      "status": "complete",
+      "dependencies": [
+        "WEB-001",
+        "OPS-002"
+      ],
+      "tests": [
+        "pytest full run"
+      ]
+    }
+  ],
+  "note": "2026-08-25 master completion audit: ALL tasks complete with executable evidence (156 pytest green in two venvs; demo persists artifacts across reconnect; clean worlds open zero incidents; sqlite+postgres migrations verified; loadtest+evaluate measured). Detection gates recalibrated \u2014 see docs/CURRENT_STATE.md final matrix."
 }
