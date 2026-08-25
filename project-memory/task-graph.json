@@ -264,7 +264,7 @@
   {
    "id": "WEB-001",
    "name": "Prototype UI bound to live API + demo fallback",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "API-001"
    ],
@@ -307,5 +307,5 @@
    ]
   }
  ],
- "note": "statuses corrected to repository truth post PHASE-16 CAUSAL-002; 144 tests green"
+ "note": "statuses corrected to repository truth post PHASE-17 WEB-001; 144 tests green"
 }

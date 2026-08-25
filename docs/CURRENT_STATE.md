@@ -54,6 +54,15 @@ PHASE 13 — ML-002 TRAINING + REGISTRY (complete); next: AGENT-001 commander.
       direction sanity on seeded heterogeneous-treatment data; LinUCB (disjoint
       linear models per arm) evaluated OFFLINE via logged-bandit replay against
       fixed always-control/always-treat baselines — beats both on the seeded stream.
+- [x] PHASE 17 WEB-001: apps/web/index.html = paytwin-os-v2.html + ONE additive
+      <script> data layer (WEB-001 marker). Key via ?key= or localStorage; /api/meta
+      2.5s-timeout probe → LIVE mode hydrates ORG/MERCH/INC/POLICIES/BLOCKED/MODELS/S/
+      series into the EXISTING shapes, wraps sendChat→/api/commander/chat,
+      inject→/api/chaos/*, runSim→/api/twin/simulate, batchReport/auditExport→API
+      downloads, 5s polling refresh, env-pill badge LIVE; any failure keeps the local
+      engine with DEMO badge. Headless-Chrome verified: sidebar+topbar render, ZERO
+      console errors in both DEMO and LIVE modes (also fixed a pre-existing undefined-
+      icon SVG warning and made the ambient tick N-merchant-safe).
 
 ## KEY BUGS FIXED IN PHASES 12–13 (root causes, not symptoms)
 1. Naive-datetime mixing: SQLite returns naive UTC values; `_payments_dicts` read them
@@ -85,17 +94,19 @@ QA-001 loadtest+EVALUATION numbers.
 - None.
 
 ## LAST TEST RESULTS
-- pytest tests/ -q → **144 passed** (4 new causal tests: uplift direction sanity on
-  heterogeneous treatment effect, per-seed determinism, LinUCB offline replay ≥ both
-  fixed baselines with >30% log coverage, replay accounting exactness).
+- pytest tests/ -q → **144 passed** (no pytest change for WEB-001; verified via
+  headless Chrome: DEMO mode and LIVE mode both render sidebar+topbar with zero
+  console errors; LIVE hydrates from /api/* with a risk_admin key).
 
 ## LAST STABLE COMMIT
-- 6ca860c "API-001: REST routers + SSE over httpx ASGI ..." (CAUSAL-002 lands in
-  the next commit)
+- 388895f "CAUSAL-002: T-learner uplift + LinUCB offline eval ..." (WEB-001 lands
+  in the next commit)
 
 ## NEXT TASK
-- WEB-001 frontend binding: cp paytwin-os-v2.html apps/web/index.html + surgical
-  data-layer block (fetch /api/meta → LIVE mode hydrating overview/incidents/
-  policies/policies/chat/twin/SSE; DEMO fallback when API absent); verify headless
-  Chrome renders sidebar+topbar with zero console errors.
+- SIM-002/OPS demo: services/sim/paytwin_sim/demo.py (migrate + seed org Nova
+  Commerce × mgro/mfash/mtrav/msubs + api keys + default policies RP-007 etc. +
+  train models + 3h history + inject issuer_outage HDFC×upi_intent + detection
+  cycle + execute best candidate + experiments + money story + DEMO_RUN.md) and
+  paytwin_api/worker.py (detection loop, auto-execute top-EV when policy allows,
+  outbox dispatch).
 
