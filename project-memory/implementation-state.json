@@ -1,7 +1,7 @@
 {
- "phase": "BUILD-COMPLETE",
+ "phase": "PHASE-2/3-FOUNDATION",
  "updated": "2026-08-25",
- "next": "optional hardening only",
+ "next_task": "FOUNDATION-003 models+alembic",
  "blockers": [],
- "notes": "See docs/CURRENT_STATE.md for the authoritative phase tracker."
+ "note": "corrected: earlier file falsely claimed BUILD-COMPLETE"
 }
