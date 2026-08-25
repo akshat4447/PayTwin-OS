@@ -1,0 +1,23 @@
+# PayTwin OS — API image (python 3.12 slim; CPU-only; no torch by design ADR-004)
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# system deps kept minimal (psycopg needs libpq via psycopg[binary]; no build-essential)
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# install packages in editable mode (monorepo layout)
+COPY packages/ /app/packages/
+COPY services/ /app/services/
+RUN pip install --upgrade pip \
+    && pip install -e packages/contracts -e services/sim -e services/ml -e services/api
+
+EXPOSE 8000
+
+# migrate then serve; worker uses the same image with a different command
+CMD ["sh", "-c", "alembic -c services/api/alembic.ini upgrade head && uvicorn paytwin_api.main:app --host 0.0.0.0 --port 8000"]

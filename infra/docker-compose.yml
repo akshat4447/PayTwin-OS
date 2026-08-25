@@ -1,0 +1,63 @@
+# PayTwin OS — dev/demo stack (ADR-001 modular monolith, ADR-003 outbox over Kafka)
+# postgres on :5433 and redis on :6380 to avoid clashing with local defaults.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: paytwin
+      POSTGRES_PASSWORD: paytwin_dev
+      POSTGRES_DB: paytwin
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paytwin"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    environment: &api_env
+      PAYTWIN_DATABASE_URL: postgresql+psycopg://paytwin:paytwin_dev@postgres:5432/paytwin
+      PAYTWIN_REDIS_URL: redis://redis:6380/0
+      PAYTWIN_ENV: development
+      PAYTWIN_LLM_PROVIDER: none
+      PAYTWIN_WEBHOOK_SECRET_SIMULATOR: sim-secret-dev
+      PAYTWIN_WEBHOOK_SECRET_MOCKPROVIDER: mock-secret-dev
+      PAYTWIN_WEBHOOK_SECRET_RAZORPAY: rzp-secret-dev
+      PAYTWIN_SECRET_KEY: dev-secret-change-me
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    command: ["python", "-m", "paytwin_api.worker"]
+    environment:
+      <<: *api_env
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  pgdata:
