@@ -6,9 +6,12 @@ Hard violations ⇒ BLOCK (regardless of autonomy mode). Autonomy ladder gates a
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from paytwin_contracts import ActionKind, AutonomyMode, PolicyDecision, PolicyRuleId
+
+# TRAI quiet hours are defined in IST; evaluate them in IST regardless of host TZ.
+IST = timezone(timedelta(hours=5, minutes=30))
 
 DEFAULT_RULES: dict = {
     PolicyRuleId.MAX_ATTEMPTS.value: 3,
@@ -41,7 +44,7 @@ class PolicyContext:
     consent_on_file: bool = True
     within_mandate_window: bool = True
     agent_authority_verified: bool = True
-    now: datetime = field(default_factory=datetime.utcnow)
+    now: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -94,7 +97,8 @@ def evaluate(rules: dict, ctx: PolicyContext) -> PolicyResult:
         hard(PolicyRuleId.CONTACT_BUDGET.value, ctx.contacts_24h < budget,
              f"{ctx.contacts_24h}/{budget} contacts in 24h — anti-harassment cap")
         dnd = rules.get(PolicyRuleId.DND_WINDOW.value) or {}
-        h = ctx.now.hour
+        naive = ctx.now.tzinfo is None
+        h = (ctx.now.replace(tzinfo=IST) if naive else ctx.now.astimezone(IST)).hour
         s, e = dnd.get("start_hour", 21), dnd.get("end_hour", 9)
         in_dnd = (h >= s or h < e) if s > e else (s <= h < e)
         hard(PolicyRuleId.DND_WINDOW.value, not in_dnd,

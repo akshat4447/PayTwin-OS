@@ -50,8 +50,11 @@ def request_execution(db: Session, principal, merchant: Merchant, candidate: Act
         merchant_id=merchant.id,
         autonomy_mode=merchant.autonomy_mode,
         action_kind=candidate.kind,
-        amount_paise=int(candidate.params.get("amount_cap_paise",
-                                             candidate.value_paise or 0)),
+        # Policy sees the monetary exposure of the slice actually being executed
+        # (canary rollout), falling back to legacy fields for hand-built candidates.
+        amount_paise=int(candidate.params.get(
+            "slice_value_paise",
+            candidate.params.get("amount_cap_paise", candidate.value_paise or 0))),
         attempts_used=int(candidate.params.get("attempts_used", 1)),
         contacts_24h=int(candidate.params.get("contacts_24h", 0)),
         minutes_since_last_action=float(candidate.params.get("minutes_since_last_action", 9999)),

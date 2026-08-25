@@ -25,7 +25,7 @@
   {
    "id": "FOUNDATION-003",
    "name": "DB models + Alembic migration (24 tables)",
-   "status": "in_progress",
+   "status": "complete",
    "dependencies": [
     "FOUNDATION-002"
    ],
@@ -37,7 +37,7 @@
   {
    "id": "TENANCY-001",
    "name": "Principal resolution + tenant scoping + isolation tests",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "FOUNDATION-003"
    ],
@@ -48,7 +48,7 @@
   {
    "id": "CONN-001",
    "name": "Connector framework + Simulator/MockProvider/Razorpay dialects",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "FOUNDATION-002"
    ],
@@ -59,7 +59,7 @@
   {
    "id": "PIPE-001",
    "name": "Webhook ingress + HMAC + inbox idempotency + DLQ + outbox",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "CONN-001"
    ],
@@ -70,7 +70,7 @@
   {
    "id": "PIPE-002",
    "name": "Worker: canonicalizer, payment state machine, SSE fanout",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "PIPE-001"
    ],
@@ -81,7 +81,7 @@
   {
    "id": "SIM-001",
    "name": "Seeded world generator + 7 incident injections + ground truth",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "FOUNDATION-002"
    ],
@@ -92,7 +92,7 @@
   {
    "id": "SIM-002",
    "name": "Webhook emitter + demo/flagship scenario builder",
-   "status": "not_started",
+   "status": "in_progress",
    "dependencies": [
     "SIM-001"
    ],
@@ -103,7 +103,7 @@
   {
    "id": "ML-001",
    "name": "Feature engine (point-in-time) + leakage tests",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "PIPE-002"
    ],
@@ -126,7 +126,7 @@
   {
    "id": "ML-003",
    "name": "Detectors EWMA/CUSUM/robust-z vs ground truth",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "ML-001"
    ],
@@ -137,7 +137,7 @@
   {
    "id": "ML-004",
    "name": "Graph RCA + Top-1/Top-3 eval",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "ML-003"
    ],
@@ -148,7 +148,7 @@
   {
    "id": "ML-005",
    "name": "Revenue-at-risk + interval validation",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "ML-004"
    ],
@@ -159,7 +159,7 @@
   {
    "id": "TWIN-001",
    "name": "Digital twin Monte-Carlo (7 scenarios) + reproducibility",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "SIM-001"
    ],
@@ -170,7 +170,7 @@
   {
    "id": "CAUSAL-001",
    "name": "Experiments: assignment/outcome/lift+CI",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "PIPE-002"
    ],
@@ -192,7 +192,7 @@
   {
    "id": "DECIDE-001",
    "name": "EV optimizer incl NO_ACTION + constraints",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "TWIN-001",
     "ML-005"
@@ -204,7 +204,7 @@
   {
    "id": "GOV-001",
    "name": "Policy engine (typed rules, versions, autonomy gates)",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "DECIDE-001"
    ],
@@ -216,7 +216,7 @@
   {
    "id": "EXEC-001",
    "name": "Idempotent executor + state machine + connector dispatch",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "GOV-001",
     "CONN-001"
@@ -240,7 +240,7 @@
   {
    "id": "AUDIT-001",
    "name": "Hash-chained audit + exports + verify",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "GOV-001"
    ],
@@ -307,5 +307,5 @@
    ]
   }
  ],
- "note": "statuses corrected to repository truth; resume session"
+ "note": "statuses corrected to repository truth post PHASE-12 incident engine; 94 tests green"
 }
