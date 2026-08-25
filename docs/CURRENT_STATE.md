@@ -1,7 +1,7 @@
 # CURRENT STATE
 
 ## CURRENT PHASE
-PHASE 12 — INCIDENT ENGINE + E2E JOURNEY (complete); next: ML-002 training + registry.
+PHASE 13 — ML-002 TRAINING + REGISTRY (complete); next: AGENT-001 commander.
 
 ## COMPLETED (verified in repo)
 - [x] PHASE 0/1 docs + project memory — commit edd79ae
@@ -25,9 +25,16 @@ PHASE 12 — INCIDENT ENGINE + E2E JOURNEY (complete); next: ML-002 training + r
 - [x] PHASE 12 incident engine (incident_service.py): correlated detection w/ anti-noise
       gates — window-overlap hierarchical corroboration, guard-banded binomial-tail
       severity (alpha 0.01, excess>=3, SR drop>=3pts), most-specific-wins family
-      selection; flagship E2E journey green (tests/test_e2e_journey.py)
+      selection; flagship E2E journey green (tests/test_e2e_journey.py) — commit 08ef7ef
+- [x] PHASE 13 ML-002: services/ml/paytwin_ml/train.py — point-in-time dataset at 4
+      cohort granularities (leakage-tested), LogisticRegression + HistGradientBoosting
+      each isotonic-calibrated on time-separated fit/cal/test slices, ROC-AUC/PR-AUC/
+      Brier/ECE, deterministic under seed, joblib artifacts in services/ml/artifacts/;
+      services/api/paytwin_api/services/model_registry.py writes model_versions rows
+      (stage TRAINED, get-or-create idempotent). Quality asserted against the ORACLE
+      information ceiling (ADR-011) instead of an unreachable absolute AUC.
 
-## KEY BUGS FIXED THIS PHASE (root causes, not symptoms)
+## KEY BUGS FIXED IN PHASES 12–13 (root causes, not symptoms)
 1. Naive-datetime mixing: SQLite returns naive UTC values; `_payments_dicts` read them
    via `.timestamp()` (= LOCAL interpretation on non-UTC hosts). Now normalized to
    aware-UTC explicitly (`_aware_utc`).
@@ -41,27 +48,33 @@ PHASE 12 — INCIDENT ENGINE + E2E JOURNEY (complete); next: ML-002 training + r
 5. DND quiet hours evaluated UTC hour against IST window (policy.py); IST is explicit now.
 6. Executor presented whole-cohort GMV to AMOUNT_CAP; candidates now carry canary-slice
    count/value (`slice_value_paise`) matching the twin's alloc_pct rollout.
+7. train.py feature names interleaved per-window while writes grouped per-stat —
+   columns silently mislabeled; caught by probing impossible column stats (a rate
+   column with std 180). Names now follow write order.
 
 ## IN PROGRESS
 - (nothing)
 
 ## NOT STARTED (dependency order)
-ML-002 (train.py LR+HistGB+isotonic+registry), AGENT-001 commander, API-001 routers+SSE,
-CAUSAL-002 uplift/LinUCB, WEB-001 frontend binding, SIM-002 demo builder + worker,
-OPS-001/002 compose+Makefile+CI, QA-001 loadtest+EVALUATION numbers.
+AGENT-001 commander, API-001 routers+SSE, CAUSAL-002 uplift/LinUCB, WEB-001 frontend
+binding, SIM-002 demo builder + worker entrypoint, OPS-001/002 compose+Makefile+CI,
+QA-001 loadtest+EVALUATION numbers.
 
 ## BLOCKERS
 - None.
 
 ## LAST TEST RESULTS
-- pytest tests/ -q → **94 passed** (incl. test_e2e_journey: one outage ⇒ one incident
-  HDFC×upi_intent, clean traffic ⇒ zero incidents).
+- pytest tests/ -q → **101 passed** (7 new ML-002 tests: leakage, shapes, ceiling-
+  fraction vs oracle, determinism, artifacts, registry row idempotent, loaded-champion
+  ranking; measured champion ~0.60 ROC-AUC vs 0.68 oracle ceiling on holdout).
 
 ## LAST STABLE COMMIT
-- 3b664f4 ("DECIDE/GOV/EXEC/AUDIT/CAUSAL ...") — incident engine lands in next commit.
+- 08ef7ef "PHASE 12: incident engine — correlated detection w/ anti-noise gates, E2E
+  journey green" (ML-002 lands in the next commit)
 
 ## NEXT TASK
-- ML-002: services/ml/paytwin_ml/train.py (LR + HistGB + isotonic, time-based holdout,
-  ROC-AUC/PR-AUC/Brier/ECE, joblib artifact + model_versions row, deterministic seed),
-  tests/test_training.py, then AGENT-001 commander.
+- AGENT-001 commander: services/api/paytwin_api/services/commander.py (intent
+  classify, tenant-scoped read-only tools, evidence pack E1..En, deterministic
+  composer w/ PAYTWIN_LLM_PROVIDER=none, action-intent -> policy -> ALLOWED/BLOCKED,
+  refusal set, tool trace) + tests/test_commander.py.
 

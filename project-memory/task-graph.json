@@ -114,7 +114,7 @@
   {
    "id": "ML-002",
    "name": "Training: LR + HistGB + isotonic + metrics + registry lifecycle",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "ML-001"
    ],
@@ -307,5 +307,5 @@
    ]
   }
  ],
- "note": "statuses corrected to repository truth post PHASE-12 incident engine; 94 tests green"
+ "note": "statuses corrected to repository truth post PHASE-13 ML-002; 101 tests green"
 }

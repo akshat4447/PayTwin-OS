@@ -41,3 +41,23 @@ Status: accepted.
 
 **ADR-010 — Dev auth via hashed API keys (JWT-ready seam).** Real SSO/OIDC is future
 scope; key model carries org+role so middleware is the only swap point. Status: accepted.
+
+**ADR-011 — Per-payment success model scored against the information ceiling, not a
+fixed AUC number.** The brief's "ROC-AUC > 0.9" for ML-002 proved information-
+theoretically unreachable: on this simulator a payment's failure is a fresh Bernoulli
+draw given cohort health + active degradation, so most positives carry no learnable
+signal. Measured with seed-fixed episodes (5 x 2h, 5 overlapping scenarios): ORACLE
+score (true cohort SR x active multipliers — perfect world knowledge) reaches only
+ROC-AUC 0.68 on the time-based holdout; the trained champion (HistGB+isotonic)
+reaches ~0.60 = ~87% of ceiling. Test asserts roc_auc >= 0.70 * oracle_auc and
+>= 0.55 absolute, plus calibration (ECE < 0.05) and Brier better than the constant-p
+predictor. Feeding realized latency or scenario flags would hit 0.9+ but is leakage
+(unavailable at decision time) and forbidden by §point-in-time. Status: accepted.
+
+**ADR-012 — Detection severity uses an exact binomial tail test, not fixed counts.**
+Correlated-cohort incidents admit when excess failures are statistically surprising
+vs the cohort's own guard-banded pre-onset baseline (alpha 0.01 across ~40 watched
+cohorts), with business floors (excess >= 3 failures, SR drop >= 3pts, n >= 10 in the
+20-min window). Calibrated so the planted HDFC×upi_intent outage opens exactly one
+incident while clean traffic opens zero. Status: accepted.
+
