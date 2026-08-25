@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paytwin-ml"
+version = "0.1.0"
+description = "PayTwin OS intelligence: features, models, detectors, RCA, twin, uplift"
+requires-python = ">=3.11"
+dependencies = ["paytwin-contracts", "numpy", "scikit-learn"]
+
+[tool.setuptools.packages.find]
+include = ["paytwin_ml*"]
