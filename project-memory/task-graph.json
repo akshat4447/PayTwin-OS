@@ -307,5 +307,5 @@
    ]
   }
  ],
- "note": "statuses corrected to repository truth post PHASE-17 WEB-001; 144 tests green"
+ "note": "statuses corrected post PHASE-18 SIM-002/worker; 148 tests green"
 }

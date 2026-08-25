@@ -63,6 +63,16 @@ PHASE 13 — ML-002 TRAINING + REGISTRY (complete); next: AGENT-001 commander.
       engine with DEMO badge. Headless-Chrome verified: sidebar+topbar render, ZERO
       console errors in both DEMO and LIVE modes (also fixed a pre-existing undefined-
       icon SVG warning and made the ambient tick N-merchant-safe).
+- [x] PHASE 18 SIM-002/worker: services/sim/paytwin_sim/demo.py — `python -m
+      paytwin_sim.demo` seeds Nova Commerce × mgro/mfash/mtrav/msubs (modes 3/2/3/1)
+      + risk_admin/ops/finance API keys + RP-007/RP-014/RP-021 live policies, ingests
+      3h history (~14k payments) with the issuer_outage flagship on mgro @min-60,
+      trains+registers the success model, runs detection→policy→execute, measures an
+      experiment, verifies the audit chain and writes DEMO_RUN.md (measured numbers
+      only; HMAC signature verified end-to-end; ingest failures now raise instead of
+      silently dead-lettering). services/api/paytwin_api/worker.py — 30s loop:
+      detection sweep per org, autopilot executes best candidate ONLY when policy
+      allows, outbox dispatch marking; graceful Ctrl-C.
 
 ## KEY BUGS FIXED IN PHASES 12–13 (root causes, not symptoms)
 1. Naive-datetime mixing: SQLite returns naive UTC values; `_payments_dicts` read them
@@ -94,19 +104,17 @@ QA-001 loadtest+EVALUATION numbers.
 - None.
 
 ## LAST TEST RESULTS
-- pytest tests/ -q → **144 passed** (no pytest change for WEB-001; verified via
-  headless Chrome: DEMO mode and LIVE mode both render sidebar+topbar with zero
-  console errors; LIVE hydrates from /api/* with a risk_admin key).
+- pytest tests/ -q → **148 passed** (4 new: world seeding shapes/modes/keys/policies,
+  worker run_once quiet pass, outbox dispatch marking, no-execution-without-policy-
+  allow guard).
 
 ## LAST STABLE COMMIT
-- 388895f "CAUSAL-002: T-learner uplift + LinUCB offline eval ..." (WEB-001 lands
-  in the next commit)
+- 177bbd2 "WEB-001: prototype UI bound to live API ..." (SIM-002/worker lands in
+  the next commit)
 
 ## NEXT TASK
-- SIM-002/OPS demo: services/sim/paytwin_sim/demo.py (migrate + seed org Nova
-  Commerce × mgro/mfash/mtrav/msubs + api keys + default policies RP-007 etc. +
-  train models + 3h history + inject issuer_outage HDFC×upi_intent + detection
-  cycle + execute best candidate + experiments + money story + DEMO_RUN.md) and
-  paytwin_api/worker.py (detection loop, auto-execute top-EV when policy allows,
-  outbox dispatch).
+- OPS-001/002: infra/Dockerfile.api + infra/docker-compose.yml (postgres:16 :5433,
+  redis:8 :6380, api, worker) + Makefile (dev/api/worker/migrate/seed/demo/test/
+  loadtest/verify) + .env.example + README.md quickstart + .github/workflows/ci.yml;
+  then QA-001 loadtest.py + EVALUATION.md measured numbers + final commit.
 

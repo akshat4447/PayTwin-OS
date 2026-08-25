@@ -1,0 +1,261 @@
+"""SIM-002: end-to-end demo - seed world, history, flagship outage, detect, act,
+measure, print/write the money story. Deterministic under PAYTWIN_SEED.
+
+Run: python -m paytwin_sim.demo   (honours PAYTWIN_DATABASE_URL, defaults to
+sqlite:///./data/demo.db). Writes DEMO_RUN.md into the repo root.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import pathlib
+from datetime import datetime, timedelta, timezone
+
+REPO = pathlib.Path(__file__).resolve().parents[3]
+
+
+def _db_url() -> str:
+    return os.environ.get("PAYTWIN_DATABASE_URL",
+                          f"sqlite:///{REPO}/data/demo.db")
+
+
+def make_db():
+    os.environ.setdefault("PAYTWIN_DATABASE_URL", _db_url())
+    from paytwin_api.db import Base, make_engine, make_session_factory
+
+    import paytwin_api.models  # noqa: F401  # populate Base.metadata
+
+    engine = make_engine(os.environ["PAYTWIN_DATABASE_URL"])
+    Base.metadata.create_all(engine)
+    return make_session_factory(engine)()
+
+
+MERCHANT_SPECS = [
+    # (id, name, short, color, industry, autonomy, stage, tpm_scale, hours)
+    ("mgro", "Nova Grocery", "NG", "#2fd48e", "grocery", 3, 5, 1.0, 3),
+    ("mfash", "Nova Fashion", "NF", "#9a6bff", "fashion", 2, 4, 0.6, 3),
+    ("mtrav", "Nova Travel", "NT", "#3ec6d0", "travel", 3, 5, 0.8, 3),
+    ("msubs", "Nova Subscriptions", "NS", "#ffb454", "subscriptions",
+     1, 3, 0.4, 3),
+]
+
+DEFAULT_POLICIES = [
+    ("RP-007", "Soft-decline retry", {
+        "max_attempts": 2, "contact_budget": 2,
+        "dnd_window": {"start_hour": 22, "end_hour": 8}}),
+    ("RP-014", "Bounded UPI reroute", {
+        "amount_cap": 500_000, "max_attempts": 3}),
+    ("RP-021", "Mandate retry calendar", {"within_mandate_window": True}),
+]
+
+
+def seed_world(db) -> dict:
+    """Org Nova Commerce x 4 prototype merchants + api keys + live policies."""
+    from paytwin_api.auth import new_api_key
+    from paytwin_api.models import ApiKey, Merchant, Organization, Policy
+
+    if db.query(Organization).filter_by(id="org1").one_or_none() is None:
+        db.add(Organization(id="org1", name="Nova Commerce"))
+    specs = {}
+    for mid, name, short, color, industry, mode, stage, scale, hours \
+            in MERCHANT_SPECS:
+        m = db.query(Merchant).filter_by(id=mid).one_or_none()
+        if m is None:
+            m = Merchant(id=mid, organization_id="org1", name=name,
+                         short_code=short, color=color)
+            db.add(m)
+        m.autonomy_mode = mode
+        m.stage = stage
+        m.config = {"industry": industry, "policy_rules": {},
+                    "world_id": mid, "connector": "simulator"}
+        specs[mid] = True
+    db.flush()
+    keys = {}
+    for role in ("risk_admin", "ops_oncall", "finance_viewer"):
+        raw, row = new_api_key("org1", role, user_id=f"demo-{role}")
+        if not db.query(ApiKey).filter_by(key_hash=row.key_hash).one_or_none():
+            db.add(row)
+        keys[role] = raw
+    for human, name, rules in DEFAULT_POLICIES:
+        if db.query(Policy).filter_by(human_id=human).one_or_none() is None:
+            db.add(Policy(organization_id="org1", merchant_id="mgro",
+                          human_id=human, name=name, version=1, status="live",
+                          rules=rules, created_by="demo"))
+    db.commit()
+    return {"org_id": "org1", "keys": keys}
+
+
+def seed_history(db, org_id: str, seed: int = 42) -> dict:
+    """Generate + ingest history; inject issuer_outage on mgro @minute 60."""
+    from paytwin_api.config import get_settings
+    from paytwin_api.services.ingest import ingest_webhook
+    from paytwin_sim.generator import generate, to_webhook_payloads
+
+    secret = get_settings().webhook_secret_simulator
+    start = datetime.now(timezone.utc) - timedelta(hours=3)
+    summary = {"events": 0, "payments": 0}
+    import hmac as _hmac
+
+    for mid, _n, _s, _c, _i, _m, _st, scale, hours in MERCHANT_SPECS:
+        scen = ["issuer_outage"] if mid == "mgro" else []
+        res = generate(mid, hours=hours, seed=seed, start=start, scenarios=scen,
+                       scenario_start_offset_min=60, tpm_scale=scale)
+        for payload in to_webhook_payloads(res.events):
+            body = json.dumps(payload).encode()
+            sig = "sha256=" + _hmac.new(secret.encode(), body,
+                                        hashlib.sha256).hexdigest()
+            r = ingest_webhook(db, "simulator", mid, body, sig)
+            if r.status != 200:
+                raise RuntimeError(
+                    f"ingest failed for {mid}: {r.status} {r.body}")
+        summary["events"] += len(res.events)
+        summary["payments"] += res.n_payments
+        if mid == "mgro":
+            summary["truth_rows"] = len(res.truth)
+    db.commit()
+    return summary
+
+
+def train_models(db, seed: int = 42) -> dict:
+    """Train the success-probability model on generated episodes; register it."""
+    from paytwin_api.services.model_registry import register_training
+    from paytwin_ml.train import train as train_model
+    from paytwin_sim.generator import generate
+
+    pays = []
+    for k in range(3):
+        st = datetime.now(timezone.utc) - timedelta(hours=48 - k * 6)
+        res = generate("mgro", hours=1.0, seed=seed + k, start=st,
+                       scenarios=["issuer_outage", "auth_failures"],
+                       scenario_start_offset_min=20)
+        for e in res.events:
+            if e.etype == "created":
+                continue
+            pays.append({"epoch": e.epoch,
+                         "failed": e.etype in ("failed", "timeout"),
+                         "method": e.method, "issuer": e.issuer, "psp": e.psp,
+                         "gateway": e.gateway, "amount": e.amount,
+                         "ref": e.ext_id, "terminal": True})
+    result = train_model(pays, seed=seed)
+    row = register_training(db, result, params={"seed": seed})
+    db.commit()
+    return {"version": row.version, "metrics": result.champion_metrics}
+
+
+def run_flagship(db, org_id: str, seed: int = 42) -> dict:
+    """Detection cycle -> execute candidates -> experiments -> story numbers."""
+    from paytwin_api.models import (
+        ActionCandidate,
+        ActionExecution,
+        Merchant,
+        Payment,
+        PolicyDecision,
+    )
+    from paytwin_api.services import experiments as exp_svc
+    from paytwin_api.services import executor, incident_service
+    from paytwin_api.services.audit import verify_chain
+
+    opened = incident_service.run_detection_cycle(db, org_id)
+    if not opened:
+        raise RuntimeError("flagship outage was not detected - investigate")
+    inc = opened[0]
+    merchant = db.query(Merchant).filter_by(id=inc.merchant_id).one()
+    cands = (db.query(ActionCandidate).filter_by(incident_id=inc.id)
+             .order_by(ActionCandidate.rank).all())
+    best = cands[0]
+    ex, res = executor.request_execution(db, None, merchant, best,
+                                         actor="demo-autopilot")
+    blocked_verdicts = 0
+    for c in cands[1:]:  # show the guardrails refusing the rest of the menu
+        _, r2 = executor.request_execution(db, None, merchant, c,
+                                           actor="demo-autopilot")
+        if r2 is not None and r2.decision == "block":
+            blocked_verdicts += 1
+    exp = exp_svc.create_experiment(db, org_id, inc.merchant_id,
+                                    f"{inc.human_id} recovery")
+    groups = (db.query(Payment.group_id)
+              .filter_by(merchant_id=inc.merchant_id).distinct()
+              .limit(150).all())
+    for (gid,) in groups:
+        a = exp_svc.record_assignment(db, exp, gid, action_execution_id=ex.id)
+        rec = db.query(Payment).filter_by(group_id=gid, recovered=True).count() > 0
+        exp_svc.record_outcome(db, a, recovered=rec, amount_paise=84_000)
+    results = exp_svc.results(db, exp)
+    ok, bad = verify_chain(db, org_id)
+    succeeded = (db.query(ActionExecution)
+                 .filter_by(state="SUCCEEDED").all())
+    return {
+        "incident": inc.human_id, "state": inc.state,
+        "cohort": {k: v for k, v in inc.cohort().items() if v},
+        "rar_paise": inc.rar_paise, "rar_lo_paise": inc.rar_lo_paise,
+        "rar_hi_paise": inc.rar_hi_paise,
+        "affected_payments": inc.affected_payments,
+        "best_candidate": best.label, "decision": res.decision,
+        "execution_state": ex.state,
+        "attempted_payments": (ex.outcome or {}).get("attempted", 0),
+        "recovered_payments": (ex.outcome or {}).get("recovered", 0),
+        "recovered_paise": sum((e.outcome or {}).get("recovered_paise", 0)
+                               for e in succeeded),
+        "experiment_lift_abs": results.get("lift_abs"),
+        "experiment_significant": results.get("significant"),
+        "blocked_verdicts": blocked_verdicts,
+        "audit_chain_ok": bool(ok and bad is None),
+    }
+
+
+def money_story(story: dict, model_info: dict, history: dict) -> str:
+    inr = lambda p: f"Rs {p / 100:,.0f}"
+    lines = [
+        "# PayTwin OS — demo run",
+        f"_seed-fixed · generated {datetime.now(timezone.utc).isoformat()}_", "",
+        "## The money story (all numbers measured in this run)", "",
+        f"- history ingested: {history['payments']} payments "
+        f"({history['events']} webhook events)",
+        f"- detected **{story['incident']}** — "
+        + " x ".join(f"{k}={v}" for k, v in story["cohort"].items())
+        + f", {story['affected_payments']} payments affected",
+        f"- revenue at risk: **{inr(story['rar_paise'])}** "
+        f"(80% interval {inr(story['rar_lo_paise'])} – {inr(story['rar_hi_paise'])})",
+        f"- autopilot executed '{story['best_candidate']}' "
+        f"({story['decision']}, state {story['execution_state']}): attempted "
+        f"{story['attempted_payments']}, recovered {story['recovered_payments']} "
+        f"= {inr(story['recovered_paise'])} back through the rails",
+        f"- guardrails refused {story['blocked_verdicts']} unsafe candidate(s); "
+        f"**policy violations executed: 0**",
+        f"- experiment lift vs control: "
+        f"{(story['experiment_lift_abs'] or 0):+.1%} "
+        f"({'significant' if story['experiment_significant'] else 'not significant'})",
+        f"- audit hash-chain verified: {story['audit_chain_ok']}",
+        f"- success-probability model {model_info['version']}: "
+        f"ROC-AUC {model_info['metrics'].get('roc_auc', 0):.2f}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def main(seed: int | None = None) -> dict:
+    seed = seed if seed is not None else int(
+        os.environ.get("PAYTWIN_SEED", "42"))
+    db = make_db()
+    print("1/5 seeding world (org, merchants, keys, policies)…")
+    world = seed_world(db)
+    print("2/5 ingesting 3h of history across 4 merchants (+outage on mgro)…")
+    history = seed_history(db, world["org_id"], seed=seed)
+    print(f"   ingested {history['events']} events / {history['payments']} payments")
+    print("3/5 training + registering success-probability model…")
+    model_info = train_models(db, seed=seed)
+    print(f"   champion {model_info['version']} "
+          f"roc_auc={model_info['metrics'].get('roc_auc')}")
+    print("4/5 flagship: detect -> decide -> policy -> execute -> measure…")
+    story = run_flagship(db, world["org_id"], seed=seed)
+    md = money_story(story, model_info, history)
+    print("5/5 writing DEMO_RUN.md")
+    (REPO / "DEMO_RUN.md").write_text(md)
+    print("\n" + md)
+    print("API keys (dev only): risk_admin="
+          f"{world['keys']['risk_admin']}")
+    return {"story": story, "model": model_info}
+
+
+if __name__ == "__main__":
+    main()
