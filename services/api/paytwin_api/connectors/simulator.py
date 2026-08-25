@@ -65,3 +65,28 @@ class SimulatorConnector(PaymentProviderConnector):
     def capabilities(self) -> Capabilities:
         return Capabilities(payment_fetch=True, payment_link=True, downtime_feed=True,
                             direct_retry=True, refund=True)
+
+    def perform_action(self, kind: str, params: dict, idempotency_key: str,
+                       secret: str) -> dict:
+        """Deterministic simulated execution: outcome derived from the idempotency key."""
+        import hashlib
+
+        seed = int(hashlib.sha256(idempotency_key.encode()).hexdigest()[:8], 16)
+        count = int(params.get("count", 0))
+        p_success = float(params.get("p_success", 0.35))
+        # deterministic Bernoulli draws from the key-seeded PRNG
+        outcomes = []
+        state = seed
+        for i in range(min(count, 100_000)):
+            state = (state * 6364136223846793005 + 1442695040888963407) % (1 << 64)
+            outcomes.append((state >> 33) / (1 << 63) < p_success)
+        recovered = sum(1 for o in outcomes if o)
+        return {
+            "connector": self.provider,
+            "kind": kind,
+            "attempted": len(outcomes),
+            "recovered": recovered,
+            "recovered_paise": int(recovered * float(params.get("avg_amount_paise", 0))),
+            "ref": f"{self.provider}_{idempotency_key[:12]}",
+        }
+
