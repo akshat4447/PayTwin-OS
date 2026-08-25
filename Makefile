@@ -43,7 +43,9 @@ seed:
 		$(PY) -c "import sys; sys.path.insert(0,'services/sim'); from paytwin_sim.demo import seed_world, make_db; print(seed_world(make_db()))"
 
 demo:
-	PAYTWIN_DATABASE_URL=${PAYTWIN_DEMO_URL:-sqlite:///./data/demo.db} $(PY) -m paytwin_sim.demo
+	PAYTWIN_DEMO_RESET=$${PAYTWIN_DEMO_RESET:-0} PAYTWIN_SEED=$${PAYTWIN_SEED:-42} \
+	PAYTWIN_DATABASE_URL=$${PAYTWIN_DEMO_URL:-sqlite:///$(CURDIR)/data/demo.db} \
+		$(PY) -m paytwin_sim.demo
 	@echo "DEMO_RUN.md written. Open http://localhost:8000/?key=<risk_admin key printed above>"
 
 test:

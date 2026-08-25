@@ -14,6 +14,13 @@ from datetime import datetime, timedelta, timezone
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 
+# Fixed world clock: identical seed ⇒ byte-identical history/HOD mix on every run
+# (same shape exercised by tests/test_e2e_journey.py). Detection anchors on the
+# newest EVENT, not wall-clock, so a fixed historical anchor needs no alignment.
+# Anchor chosen on the HOD PEAK (hours 17–19 UTC avg ≈1.47) so the planted cohort
+# always carries enough volume for the calibrated admission gates.
+DEMO_START = datetime(2026, 8, 25, 20, 0, tzinfo=timezone.utc)
+
 
 def _db_url() -> str:
     return os.environ.get("PAYTWIN_DATABASE_URL",
@@ -88,7 +95,7 @@ def seed_world(db) -> dict:
 
 def seed_history(db, org_id: str, seed: int = 42, hours: float | None = None,
                  only: tuple[str, ...] | None = None) -> dict:
-    """Generate + ingest history; inject issuer_outage on mgro @minute 60.
+    """Generate + ingest history; inject issuer_outage on mgro @~⅓ of the span.
 
     `hours` shrinks every merchant's span and `only` restricts merchants —
     test knobs only; the production default remains 3h across all four specs.
@@ -99,7 +106,7 @@ def seed_history(db, org_id: str, seed: int = 42, hours: float | None = None,
 
     secret = get_settings().webhook_secret_simulator
     span = hours if hours is not None else 3
-    start = datetime.now(timezone.utc) - timedelta(hours=span)
+    start = DEMO_START - timedelta(hours=span)
     # Planted outage begins at ~1/3 of the span so the detection sweep always has
     # a full second observation window AFTER it (persistence gate needs w2 data);
     # a fixed min-60 offset starves short spans of that second window.
