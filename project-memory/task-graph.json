@@ -228,7 +228,7 @@
   {
    "id": "AGENT-001",
    "name": "Commander: tools + evidence pack + composer + refusal",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "ML-004",
     "GOV-001"
@@ -307,5 +307,5 @@
    ]
   }
  ],
- "note": "statuses corrected to repository truth post PHASE-13 ML-002; 101 tests green"
+ "note": "statuses corrected to repository truth post PHASE-14 AGENT-001; 115 tests green"
 }

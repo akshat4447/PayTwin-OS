@@ -33,6 +33,14 @@ PHASE 13 — ML-002 TRAINING + REGISTRY (complete); next: AGENT-001 commander.
       services/api/paytwin_api/services/model_registry.py writes model_versions rows
       (stage TRAINED, get-or-create idempotent). Quality asserted against the ORACLE
       information ceiling (ADR-011) instead of an unreachable absolute AUC.
+- [x] PHASE 14 AGENT-001: services/api/paytwin_api/services/commander.py — intent
+      classifier (refusal patterns first, then action verbs, then info intents),
+      read-only tenant-scoped tools (get_incident, query_metrics, get_twin,
+      get_experiment, explain_decision, get_audit), evidence pack E1..En with
+      resolvable refs, deterministic composer (works with PAYTWIN_LLM_PROVIDER=none),
+      action-intent -> typed draft -> POLICY EVALUATION ONLY (never dispatches;
+      reply states "No customer or payment action was executed."), tool traces
+      persisted to the hash-chained audit log (actor_role=agent).
 
 ## KEY BUGS FIXED IN PHASES 12–13 (root causes, not symptoms)
 1. Naive-datetime mixing: SQLite returns naive UTC values; `_payments_dicts` read them
@@ -56,25 +64,26 @@ PHASE 13 — ML-002 TRAINING + REGISTRY (complete); next: AGENT-001 commander.
 - (nothing)
 
 ## NOT STARTED (dependency order)
-AGENT-001 commander, API-001 routers+SSE, CAUSAL-002 uplift/LinUCB, WEB-001 frontend
-binding, SIM-002 demo builder + worker entrypoint, OPS-001/002 compose+Makefile+CI,
+API-001 routers+SSE, CAUSAL-002 uplift/LinUCB, WEB-001 frontend binding,
+SIM-002 demo builder + worker entrypoint, OPS-001/002 compose+Makefile+CI,
 QA-001 loadtest+EVALUATION numbers.
 
 ## BLOCKERS
 - None.
 
 ## LAST TEST RESULTS
-- pytest tests/ -q → **101 passed** (7 new ML-002 tests: leakage, shapes, ceiling-
-  fraction vs oracle, determinism, artifacts, registry row idempotent, loaded-champion
-  ranking; measured champion ~0.60 ROC-AUC vs 0.68 oracle ceiling on holdout).
+- pytest tests/ -q → **115 passed** (14 new commander tests: grounding/citations,
+  twin+audit tools, BLOCKED and ALLOWED policy paths with zero executions, 6
+  adversarial refusals, tool-trace persistence + chain verify, no-LLM-key mode,
+  cross-tenant isolation).
 
 ## LAST STABLE COMMIT
-- 08ef7ef "PHASE 12: incident engine — correlated detection w/ anti-noise gates, E2E
-  journey green" (ML-002 lands in the next commit)
+- 7d01bec "ML-002: training + registry ..." (AGENT-001 lands in the next commit)
 
 ## NEXT TASK
-- AGENT-001 commander: services/api/paytwin_api/services/commander.py (intent
-  classify, tenant-scoped read-only tools, evidence pack E1..En, deterministic
-  composer w/ PAYTWIN_LLM_PROVIDER=none, action-intent -> policy -> ALLOWED/BLOCKED,
-  refusal set, tool trace) + tests/test_commander.py.
+- API-001 routers: paytwin_api/routers/{overview,incidents,twin,policies,commander,
+  experiments,models,audit,reports,chaos,stream}.py per docs/API_CONTRACTS.md; SSE via
+  services/bus.py; bearer auth via deps.current_principal; RBAC (finance_viewer
+  read-only, risk_admin for promote/policy edit); /api/incidents/{id}/execute wiring;
+  httpx ASGI tests in tests/test_api.py.
 
