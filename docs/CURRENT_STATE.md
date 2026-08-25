@@ -49,6 +49,11 @@ PHASE 13 — ML-002 TRAINING + REGISTRY (complete); next: AGENT-001 commander.
       webhook ingest), stream (SSE per-org fan-out)}. Bearer auth via deps; RBAC
       helpers require_write/require_admin; execute publishes policy_decision/action
       on the bus; idempotent replay returns decision=duplicate.
+- [x] PHASE 16 CAUSAL-002: services/ml/paytwin_ml/causal.py — T-learner uplift
+      (two HistGB regressor heads; uplift = mu1 − mu0), deterministic per seed,
+      direction sanity on seeded heterogeneous-treatment data; LinUCB (disjoint
+      linear models per arm) evaluated OFFLINE via logged-bandit replay against
+      fixed always-control/always-treat baselines — beats both on the seeded stream.
 
 ## KEY BUGS FIXED IN PHASES 12–13 (root causes, not symptoms)
 1. Naive-datetime mixing: SQLite returns naive UTC values; `_payments_dicts` read them
@@ -80,17 +85,17 @@ QA-001 loadtest+EVALUATION numbers.
 - None.
 
 ## LAST TEST RESULTS
-- pytest tests/ -q → **140 passed** (25 new API tests over httpx ASGI: auth 401s,
-  RBAC 403s for viewer, cross-tenant 404/list isolation, overview shape+values,
-  blocked & allowed & idempotent-duplicate execute paths with SSE events asserted,
-  byte-identical twin over HTTP, policy versioning + unknown-rule 422, model promote
-  RBAC, commander grounding over HTTP, audit verify/export, chaos injection).
+- pytest tests/ -q → **144 passed** (4 new causal tests: uplift direction sanity on
+  heterogeneous treatment effect, per-seed determinism, LinUCB offline replay ≥ both
+  fixed baselines with >30% log coverage, replay accounting exactness).
 
 ## LAST STABLE COMMIT
-- 5f198b7 "AGENT-001: commander grounded in tenant-scoped tools ..." (API-001 lands
-  in the next commit)
+- 6ca860c "API-001: REST routers + SSE over httpx ASGI ..." (CAUSAL-002 lands in
+  the next commit)
 
 ## NEXT TASK
-- CAUSAL-002 uplift: T-learner (two HistGB heads) + LinUCB offline eval vs fixed
-  baseline on logged assignments (numpy) ~tests/test_causal.py.
+- WEB-001 frontend binding: cp paytwin-os-v2.html apps/web/index.html + surgical
+  data-layer block (fetch /api/meta → LIVE mode hydrating overview/incidents/
+  policies/policies/chat/twin/SSE; DEMO fallback when API absent); verify headless
+  Chrome renders sidebar+topbar with zero console errors.
 

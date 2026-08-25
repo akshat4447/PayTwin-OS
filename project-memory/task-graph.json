@@ -181,7 +181,7 @@
   {
    "id": "CAUSAL-002",
    "name": "T-learner uplift + LinUCB offline eval",
-   "status": "not_started",
+   "status": "complete",
    "dependencies": [
     "ML-002"
    ],
@@ -307,5 +307,5 @@
    ]
   }
  ],
- "note": "statuses corrected to repository truth post PHASE-15 API-001; 140 tests green"
+ "note": "statuses corrected to repository truth post PHASE-16 CAUSAL-002; 144 tests green"
 }
