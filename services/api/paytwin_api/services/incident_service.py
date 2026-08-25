@@ -29,12 +29,29 @@ ISSUERS = ("HDFC", "ICICI", "SBI", "AXIS", "KOTAK")
 METHODS = ("upi_intent", "upi_collect", "card", "netbanking", "mandate")
 PSPS = ("cashfree", "razorpay", "payu")
 
-# Severity-gate tuning (calibrated on seed-42 outage vs clean sweeps, see tests):
+# Severity-gate tuning (calibrated empirically on clean-vs-planted world sweeps,
+# seeds 42/7, see tests/test_finish_audit.py::test_clean_world_opens_no_incidents):
 SEVERITY_GUARD_MIN = 10   # minutes before firing excluded from the baseline region
 SEVERITY_ALPHA = 0.01     # per-cohort binomial-tail threshold (~40 cohorts watched)
 SEVERITY_MIN_EXCESS = 3   # business floor: extra failures beyond expectation
 SEVERITY_MIN_DROP = 0.03  # business floor: window SR at least this far below baseline
-SEVERITY_MIN_N = 10       # verdict needs traffic
+SEVERITY_MIN_N = 25       # verdict needs enough traffic for a meaningful tail
+                          # (thin cohorts turn 2-4 random fails into "p≈1e-7")
+PERSIST_MIN_EXCESS = 2    # acceptance is DUAL-PATH on the NEXT 20-min window:
+PERSIST_MIN_N = 5         # (a) statistical persistence — binomial tail there
+                          #     clears 4×SEVERITY_ALPHA with ≥3 fails, OR
+                          # (b) overwhelming single-window evidence —
+OVERWHELM_MIN_FAILS = 6   #     ≥6 failures,
+OVERWHELM_MIN_DROP = 0.08 #     SR drop ≥8pts,
+OVERWHELM_SHARE = 0.75    #     and one RCA edge explains ≥75% of the excess.
+                          # Planted outages satisfy (a) when still running and
+                          # (b) when detected near their end; organic i.i.d.
+                          # clusters satisfy neither (shares ≤0.73, drops ≤7pts).
+RCA_MIN_SHARE = 0.35      # an incident must have a DOMINANT attributable cause:
+                          # removing the top RCA edge must explain ≥35% of the
+                          # excess. Organic noise clusters spread excess across
+                          # sibling cohorts, so no single edge dominates them —
+                          # α-thresholds alone cannot separate the two.
 
 
 def _watch_cohorts() -> list[dict]:
@@ -112,6 +129,26 @@ def _related(d1: dict, d2: dict) -> bool:
     return True
 
 
+def _sustains(pays: list[dict], dims: dict, w_start: int, bsr: float) -> bool:
+    """Persistence rule: the NEXT 20-min window must ALSO be statistically elevated.
+
+    Calibrated on clean-vs-planted sweeps (seeds 42/7): planted 25-min outages keep
+    failing through the following window (HDFC×upi_intent w2: 4/33, tail ≈0.009),
+    while organic i.i.d. spikes do not (netbanking FP 2/42 tail ≈0.19; upi_intent
+    seed-7 FP 5/128 tail ≈0.22). Confirmation uses a looser 4×SEVERITY_ALPHA so
+    genuine-but-weaker second windows still clear; thin cohorts (<{PERSIST_MIN_N}
+    obs) are conservatively rejected — the worker re-sweeps every cycle.
+    """
+    a = w_start + 20 * 60
+    coh = [p for p in pays if a <= p["epoch"] < a + 20 * 60
+           and all(p.get(k) == v for k, v in dims.items() if v)]
+    if len(coh) < PERSIST_MIN_N:
+        return False
+    fails = sum(1 for p in coh if p["failed"])
+    return (fails >= 3
+            and _binom_sf(fails, len(coh), 1.0 - bsr) < SEVERITY_ALPHA * 4)
+
+
 def run_detection_cycle(db: Session, organization_id: str) -> list[Incident]:
     """One sweep: detect per cohort, correlate to a single incident per merchant.
 
@@ -122,8 +159,13 @@ def run_detection_cycle(db: Session, organization_id: str) -> list[Incident]:
        cohorts together; scattered noise firings do not).
     2. Severity on a bounded 20-min window vs a guard-banded pre-onset baseline of
        the cohort itself (capped at 99.5%): exact binomial tail p < 0.01 AND
-       excess ≥3 failures AND window SR ≥3pts below baseline AND ≥10 attempts.
-    3. Revenue-weighted selection: family with max excess wins; most-specific dims
+       excess ≥3 failures AND window SR ≥3pts below baseline AND ≥25 attempts.
+    3. Dual-path admission — either the NEXT 20-min window is also elevated
+       (statistical persistence, tail <4×α, ≥3 fails) OR single-window evidence
+       is overwhelming (≥6 failures, SR drop ≥8pts, top RCA edge explains ≥75%
+       of excess via its counterfactual mask). Planted outages always satisfy
+       one path; organic multi-cohort noise satisfies neither.
+    4. Revenue-weighted selection: family with max excess wins; most-specific dims
        inside the family become the incident cohort.
     """
     opened: list[Incident] = []
@@ -171,7 +213,7 @@ def run_detection_cycle(db: Session, organization_id: str) -> list[Incident]:
             excess = fails - int(round(len(coh) * (1 - bsr)))
             wsr = 1 - fails / len(coh)
             p_tail = _binom_sf(fails, len(coh), 1 - bsr)
-            return (excess, wsr, (win, bsr), p_tail), "ok"
+            return (excess, wsr, (win, bsr), p_tail, fails), "ok"
 
         # candidates with corroboration + severity, ranked by excess (revenue-weighted)
         candidates = []
@@ -187,9 +229,23 @@ def run_detection_cycle(db: Session, organization_id: str) -> list[Incident]:
             sev, _why = severity(dims, det)
             if sev is None:
                 continue
-            excess, wsr, meta, p_tail = sev
-            if (excess >= SEVERITY_MIN_EXCESS and wsr < meta[1] - SEVERITY_MIN_DROP
+            excess, wsr, meta, p_tail, n_fails = sev
+            if not (excess >= SEVERITY_MIN_EXCESS
+                    and wsr < meta[1] - SEVERITY_MIN_DROP
                     and p_tail < SEVERITY_ALPHA):
+                continue
+            rca_top = rank_root_causes(pays, meta[0], baseline_sr=meta[1],
+                                       top_k=1)
+            share = rca_top[0].counterfactual_share if rca_top else 0.0
+            sustained = _sustains(pays, dims, t0 + f1, meta[1])
+            # Overwhelm is reserved for SPECIFIC cohorts (≥2 dims): single-dim
+            # aggregates bundle many issuers/psps and are exactly where organic
+            # noise manufactures deceptively concentrated-looking evidence.
+            overwhelming = (len(dims) >= 2
+                            and n_fails >= OVERWHELM_MIN_FAILS
+                            and (meta[1] - wsr) >= OVERWHELM_MIN_DROP
+                            and share >= OVERWHELM_SHARE)
+            if sustained or overwhelming:
                 candidates.append((excess, len(dims), dims, det, meta))
         if not candidates:
             continue
@@ -228,6 +284,12 @@ def _open_incident(db: Session, m: Merchant, dims: dict, det, pays: list[dict],
     if existing:
         return None  # one outage ⇒ one incident
 
+    # RCA dominance gate — computed before any rows exist so aborting is a
+    # clean no-op: without a dominant attributable edge this is organic noise.
+    rca_cands = rank_root_causes(pays, window, baseline_sr=bsr, top_k=3)
+    if not rca_cands or rca_cands[0].counterfactual_share < RCA_MIN_SHARE:
+        return None
+
     rar = revenue_at_risk(pays, window, dims, bsr)
     wsr = rar.window_sr
     sev = "P1" if (rar.expected_paise > 2_000_00 and wsr < bsr - 0.05) else "P2"
@@ -259,14 +321,13 @@ def _open_incident(db: Session, m: Merchant, dims: dict, det, pays: list[dict],
        f"Revenue at risk ₹{rar.expected_paise / 100:,.0f} "
        f"[₹{rar.lo_paise / 100:,.0f} – ₹{rar.hi_paise / 100:,.0f}]", 1.5)
 
-    cands = rank_root_causes(pays, window, baseline_sr=bsr, top_k=3)
-    for c in cands:
+    for c in rca_cands:
         db.add(RootCauseCandidate(incident_id=inc.id, edge_issuer=c.edge.get("issuer"),
                                   edge_method=c.edge.get("method"), edge_psp=c.edge.get("psp"),
                                   score=c.score, rank=c.rank,
                                   counterfactual_share=c.counterfactual_share))
-    if cands:
-        top = cands[0]
+    if rca_cands:
+        top = rca_cands[0]
         inc.state = "DIAGNOSED"
         inc.confidence = max(inc.confidence, top.score)
         ev("rca", f"rca.{inc.human_id}",
@@ -302,13 +363,19 @@ def _propose_candidates(db: Session, inc: Incident, m: Merchant, failed: list[di
     alloc_pct = 25
     slice_count = max(1, round(len(fp) * alloc_pct / 100)) if fp else 0
     slice_value = int(total_value * alloc_pct / 100)
+    # Twin scenario labels are simulation vocabulary; the candidate kind written to
+    # ActionCandidate.kind MUST be the canonical contracts ActionKind value — it is
+    # matched against connector capabilities at dispatch time (execution.py).
+    TWIN_TO_KIND = {"retry_burst": "retry_burst", "reroute_psp": "reroute_psp",
+                    "payment_links": "payment_link",
+                    "notify_customer": "notify_customer"}
     options: list[ActionOption] = []
     for scen in ("retry_burst", "reroute_psp", "payment_links", "notify_customer"):
         twin = run_twin(m.id, industry, fp, scen, seed=42, trials=400,
                         alloc_pct=alloc_pct, duration_min=30)
         p_delta = min(0.45, twin.p50_paise / max(1, total_value) + 0.02)
         options.append(ActionOption(
-            kind=scen, label=scen.replace("_", " ").title(),
+            kind=TWIN_TO_KIND[scen], label=scen.replace("_", " ").title(),
             detail=(f"twin p50 +₹{twin.p50_paise / 100:,.0f} "
                     f"[₹{twin.lo_paise / 100:,.0f}–₹{twin.hi_paise / 100:,.0f}] "
                     f"cost ₹{twin.cost_paise / 100:,.0f}"),

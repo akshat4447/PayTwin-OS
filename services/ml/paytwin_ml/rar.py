@@ -38,12 +38,21 @@ def revenue_at_risk(payments: list[dict], window: tuple[int, int], cohort: dict,
 
     # interval: binomial uncertainty on excess + amount spread (empirical p10/p90)
     sigma_n = sqrt(max(n * baseline_sr * (1 - baseline_sr), 1.0))
-    lo_n = max(0, excess - 1.28 * sigma_n)
+    lo_n = max(0.0, excess - 1.28 * sigma_n)
     hi_n = excess + 1.28 * sigma_n
-    lo_amt = amounts[max(0, int(0.1 * len(amounts)) ) - 1 if amounts else 0]
-    hi_amt = amounts[min(len(amounts) - 1, int(0.9 * len(amounts)))]
-    lo = lo_n * lo_amt
-    hi = hi_n * hi_amt
+
+    def _pctl(q: float) -> int:
+        """Empirical q-quantile of failed amounts (index-safe for any n)."""
+        if not amounts:
+            return 0
+        i = min(len(amounts) - 1, max(0, round(q * (len(amounts) - 1))))
+        return int(amounts[i])
+
+    lo = lo_n * _pctl(0.10)
+    hi = hi_n * _pctl(0.90)
+    # invariant: the point estimate must lie inside its own reported interval
+    lo = min(lo, expected)
+    hi = max(hi, expected)
     return RaR(expected_paise=int(expected), lo_paise=int(lo), hi_paise=int(hi),
                affected=n, excess_failures=excess, baseline_sr=baseline_sr,
                window_sr=window_sr)

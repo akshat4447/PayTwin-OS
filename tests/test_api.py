@@ -131,7 +131,7 @@ class TestAuth:
         assert r.json()["error"]["code"] == "missing_bearer"
 
     def test_bad_key_401(self, client, keys):
-        r = client.get("/api/meta", headers=_h("ptw_not_a_real_key_at_all"))
+        r = client.get("/api/meta", headers=_h("ptw_invalid_key"))
         assert r.status_code == 401 and r.json()["error"]["code"] == "invalid_key"
 
     def test_meta_ok(self, client, keys, seeded):

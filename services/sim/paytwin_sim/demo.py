@@ -86,21 +86,34 @@ def seed_world(db) -> dict:
     return {"org_id": "org1", "keys": keys}
 
 
-def seed_history(db, org_id: str, seed: int = 42) -> dict:
-    """Generate + ingest history; inject issuer_outage on mgro @minute 60."""
+def seed_history(db, org_id: str, seed: int = 42, hours: float | None = None,
+                 only: tuple[str, ...] | None = None) -> dict:
+    """Generate + ingest history; inject issuer_outage on mgro @minute 60.
+
+    `hours` shrinks every merchant's span and `only` restricts merchants —
+    test knobs only; the production default remains 3h across all four specs.
+    """
     from paytwin_api.config import get_settings
     from paytwin_api.services.ingest import ingest_webhook
     from paytwin_sim.generator import generate, to_webhook_payloads
 
     secret = get_settings().webhook_secret_simulator
-    start = datetime.now(timezone.utc) - timedelta(hours=3)
+    span = hours if hours is not None else 3
+    start = datetime.now(timezone.utc) - timedelta(hours=span)
+    # Planted outage begins at ~1/3 of the span so the detection sweep always has
+    # a full second observation window AFTER it (persistence gate needs w2 data);
+    # a fixed min-60 offset starves short spans of that second window.
+    scen_offset = int(span * 60 * 0.33)
     summary = {"events": 0, "payments": 0}
     import hmac as _hmac
 
-    for mid, _n, _s, _c, _i, _m, _st, scale, hours in MERCHANT_SPECS:
+    for mid, _n, _s, _c, _i, _m, _st, scale, spec_hours in MERCHANT_SPECS:
+        if only and mid not in only:
+            continue
         scen = ["issuer_outage"] if mid == "mgro" else []
-        res = generate(mid, hours=hours, seed=seed, start=start, scenarios=scen,
-                       scenario_start_offset_min=60, tpm_scale=scale)
+        res = generate(mid, hours=spec_hours if hours is None else hours,
+                       seed=seed, start=start, scenarios=scen,
+                       scenario_start_offset_min=scen_offset, tpm_scale=scale)
         for payload in to_webhook_payloads(res.events):
             body = json.dumps(payload).encode()
             sig = "sha256=" + _hmac.new(secret.encode(), body,
@@ -124,8 +137,19 @@ def train_models(db, seed: int = 42) -> dict:
     from paytwin_sim.generator import generate
 
     pays = []
+    # Anchor training episodes on the NEWEST ingested payment (not wall clock):
+    # same DB content + same seed ⇒ byte-reproducible champion, run over run.
+    from sqlalchemy import func as sa_func
+
+    from paytwin_api.models import Payment
+
+    anchor = db.query(sa_func.max(Payment.occurred_at)).scalar()
+    if anchor is None:
+        anchor = datetime.now(timezone.utc)
+    elif anchor.tzinfo is None:  # sqlite returns naive UTC
+        anchor = anchor.replace(tzinfo=timezone.utc)
     for k in range(3):
-        st = datetime.now(timezone.utc) - timedelta(hours=48 - k * 6)
+        st = anchor - timedelta(hours=48 - k * 6)
         res = generate("mgro", hours=1.0, seed=seed + k, start=st,
                        scenarios=["issuer_outage", "auth_failures"],
                        scenario_start_offset_min=20)
@@ -148,6 +172,7 @@ def run_flagship(db, org_id: str, seed: int = 42) -> dict:
     from paytwin_api.models import (
         ActionCandidate,
         ActionExecution,
+        AuditRecord,
         Merchant,
         Payment,
         PolicyDecision,
@@ -163,44 +188,67 @@ def run_flagship(db, org_id: str, seed: int = 42) -> dict:
     merchant = db.query(Merchant).filter_by(id=inc.merchant_id).one()
     cands = (db.query(ActionCandidate).filter_by(incident_id=inc.id)
              .order_by(ActionCandidate.rank).all())
-    best = cands[0]
-    ex, res = executor.request_execution(db, None, merchant, best,
-                                         actor="demo-autopilot")
-    blocked_verdicts = 0
-    for c in cands[1:]:  # show the guardrails refusing the rest of the menu
-        _, r2 = executor.request_execution(db, None, merchant, c,
-                                           actor="demo-autopilot")
-        if r2 is not None and r2.decision == "block":
+    # Walk the whole ranked menu through policy; aggregate outcomes honestly.
+    best, ex, res = (cands[0] if cands else None), None, None
+    blocked_verdicts = approval_verdicts = 0
+    attempted = recovered = recovered_paise = 0
+    failed_kinds: list[str] = []
+    for i, c in enumerate(cands):
+        exi, ri = executor.request_execution(db, None, merchant, c,
+                                             actor="demo-autopilot")
+        if ri is None:
+            continue  # idempotent replay of an already-recorded request
+        if i == 0:
+            best, ex, res = c, exi, ri
+        if ri.decision == "block":
             blocked_verdicts += 1
+            continue
+        if ri.decision == "require_approval":
+            approval_verdicts += 1
+            continue
+        o = exi.outcome or {}
+        attempted += int(o.get("attempted", 0))
+        recovered += int(o.get("recovered", 0))
+        recovered_paise += int(o.get("recovered_paise", 0))
+        if exi.state != "SUCCEEDED":
+            failed_kinds.append(c.kind)
+    allowed_actions = len(cands) - blocked_verdicts - approval_verdicts
     exp = exp_svc.create_experiment(db, org_id, inc.merchant_id,
                                     f"{inc.human_id} recovery")
-    groups = (db.query(Payment.group_id)
-              .filter_by(merchant_id=inc.merchant_id).distinct()
-              .limit(150).all())
-    for (gid,) in groups:
-        a = exp_svc.record_assignment(db, exp, gid, action_execution_id=ex.id)
-        rec = db.query(Payment).filter_by(group_id=gid, recovered=True).count() > 0
-        exp_svc.record_outcome(db, a, recovered=rec, amount_paise=84_000)
-    results = exp_svc.results(db, exp)
+    results: dict = {}
+    if ex is not None:
+        groups = (db.query(Payment.group_id)
+                  .filter_by(merchant_id=inc.merchant_id).distinct()
+                  .limit(150).all())
+        for (gid,) in groups:
+            a = exp_svc.record_assignment(db, exp, gid, action_execution_id=ex.id)
+            rec = db.query(Payment).filter_by(group_id=gid, recovered=True).count() > 0
+            exp_svc.record_outcome(db, a, recovered=rec, amount_paise=84_000)
+        results = exp_svc.results(db, exp)
+    db.commit()  # persist flagship artifacts (incident/candidates/executions/audit/exp)
     ok, bad = verify_chain(db, org_id)
-    succeeded = (db.query(ActionExecution)
-                 .filter_by(state="SUCCEEDED").all())
+    chain_len = (db.query(AuditRecord)
+                 .filter_by(organization_id=org_id).count())
     return {
         "incident": inc.human_id, "state": inc.state,
         "cohort": {k: v for k, v in inc.cohort().items() if v},
         "rar_paise": inc.rar_paise, "rar_lo_paise": inc.rar_lo_paise,
         "rar_hi_paise": inc.rar_hi_paise,
         "affected_payments": inc.affected_payments,
-        "best_candidate": best.label, "decision": res.decision,
-        "execution_state": ex.state,
-        "attempted_payments": (ex.outcome or {}).get("attempted", 0),
-        "recovered_payments": (ex.outcome or {}).get("recovered", 0),
-        "recovered_paise": sum((e.outcome or {}).get("recovered_paise", 0)
-                               for e in succeeded),
+        "best_candidate": best.label if best is not None else "-",
+        "decision": res.decision if res is not None else "replay",
+        "execution_state": ex.state if ex is not None else "NONE",
+        "attempted_payments": attempted,
+        "recovered_payments": recovered,
+        "recovered_paise": recovered_paise,
+        "allowed_actions": max(0, allowed_actions),
+        "failed_actions": ", ".join(failed_kinds) if failed_kinds else "",
         "experiment_lift_abs": results.get("lift_abs"),
         "experiment_significant": results.get("significant"),
         "blocked_verdicts": blocked_verdicts,
-        "audit_chain_ok": bool(ok and bad is None),
+        "approval_verdicts": approval_verdicts,
+        "audit_chain_ok": bool(ok and bad is None and chain_len > 0),
+        "audit_chain_len": chain_len,
     }
 
 
@@ -217,16 +265,23 @@ def money_story(story: dict, model_info: dict, history: dict) -> str:
         + f", {story['affected_payments']} payments affected",
         f"- revenue at risk: **{inr(story['rar_paise'])}** "
         f"(80% interval {inr(story['rar_lo_paise'])} – {inr(story['rar_hi_paise'])})",
-        f"- autopilot executed '{story['best_candidate']}' "
-        f"({story['decision']}, state {story['execution_state']}): attempted "
-        f"{story['attempted_payments']}, recovered {story['recovered_payments']} "
-        f"= {inr(story['recovered_paise'])} back through the rails",
-        f"- guardrails refused {story['blocked_verdicts']} unsafe candidate(s); "
-        f"**policy violations executed: 0**",
+        f"- autopilot dispatched {story['allowed_actions']} policy-allowed action(s); "
+        f"best candidate '{story['best_candidate']}' "
+        f"({story['decision']}, state {story['execution_state']})",
+        f"- customers reached: attempted {story['attempted_payments']}, "
+        f"recovered {story['recovered_payments']}"
+        + (f" = {inr(story['recovered_paise'])} back through the rails"
+           if story["recovered_paise"] else " (no recovery credited this run)"),
+        f"- guardrails: {story['blocked_verdicts']} blocked, "
+        f"{story['approval_verdicts']} approval-gated"
+        + (f"; FAILED actions: {story['failed_actions']}"
+           if story["failed_actions"] else "")
+        + "; **policy violations executed: 0**",
         f"- experiment lift vs control: "
         f"{(story['experiment_lift_abs'] or 0):+.1%} "
         f"({'significant' if story['experiment_significant'] else 'not significant'})",
-        f"- audit hash-chain verified: {story['audit_chain_ok']}",
+        f"- audit hash-chain verified: {story['audit_chain_ok']} "
+        f"({story['audit_chain_len']} records)",
         f"- success-probability model {model_info['version']}: "
         f"ROC-AUC {model_info['metrics'].get('roc_auc', 0):.2f}",
     ]
@@ -237,6 +292,25 @@ def main(seed: int | None = None) -> dict:
     seed = seed if seed is not None else int(
         os.environ.get("PAYTWIN_SEED", "42"))
     db = make_db()
+    from paytwin_api.db import Base, make_engine
+
+    from paytwin_api.models import Payment
+
+    # A dirty DB double-ingests history and destroys detection baselines (B4):
+    # refuse unless an explicit wipe is requested.
+    if db.query(Payment).count() > 0:
+        if os.environ.get("PAYTWIN_DEMO_RESET") != "1":
+            raise SystemExit(
+                "refusing to run: database already contains payments. Re-run with "
+                "PAYTWIN_DEMO_RESET=1 to wipe and rebuild, or point "
+                "PAYTWIN_DATABASE_URL at a fresh file.")
+        url = _db_url()
+        db.close()
+        eng = make_engine(url)
+        Base.metadata.drop_all(eng)
+        Base.metadata.create_all(eng)
+        eng.dispose()
+        db = make_db()
     print("1/5 seeding world (org, merchants, keys, policies)…")
     world = seed_world(db)
     print("2/5 ingesting 3h of history across 4 merchants (+outage on mgro)…")
@@ -254,6 +328,7 @@ def main(seed: int | None = None) -> dict:
     print("\n" + md)
     print("API keys (dev only): risk_admin="
           f"{world['keys']['risk_admin']}")
+    db.close()
     return {"story": story, "model": model_info}
 
 
