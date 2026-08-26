@@ -1,6 +1,6 @@
 """JSON evidence store for Reliability Lab runs (data/reliability/).
 
-Decision (docs/DECISIONS.md): run artifacts are immutable JSON documents rather
+Decision (HISTORY.md §4 audit matrix): run artifacts are immutable JSON documents rather
 than new SQL tables for v1 — they are generated evidence, queried rarely, and
 this keeps the feature migration-free while remaining fully auditable on disk.
 """

@@ -1,4 +1,4 @@
-"""QA-001 evaluation harness — prints every number that appears in docs/EVALUATION.md.
+"""QA-001 evaluation harness — prints every number that appears in README.md §14.
 
 All values are MEASURED here against simulator ground truth; nothing is estimated.
 Usage: python scripts/evaluate.py   (writes /tmp/eval_numbers.json too)

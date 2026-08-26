@@ -6,7 +6,7 @@ draw given cohort health — most positives are irreducible noise. The ORACLE sc
 (true cohort SR x active scenario multipliers, i.e. perfect knowledge of the world)
 measures ROC-AUC ~0.68 on the holdout. We therefore assert the champion reaches a
 high fraction of the oracle ceiling instead of an unreachable absolute number
-(recorded in docs/DECISIONS.md ADR-011).
+(recorded in HISTORY.md ADR-011).
 """
 from __future__ import annotations
 
