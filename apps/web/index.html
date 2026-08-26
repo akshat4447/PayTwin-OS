@@ -1007,7 +1007,12 @@ function load(){
      console.log('RELDBG fetched · suites='+rs[1].suites.length);
      S.rel.ov=rs[0];S.rel.suites=rs[1].suites;S.rel.findings=rs[2].findings;
      S.rel.live=true;S.rel.loading=false;S.rel.loaded=true;render()})
-   .catch(function(e){console.log('RELDBG fetch FAIL: '+e);S.rel.loading=false;render()})}
+   .catch(function(e){
+     // Any load failure is terminal for this session — the connect card
+     // takes over, preventing infinite retry loops against a rotated key.
+     S.rel.loaded=true;S.rel.live=false;S.rel.loading=false;
+     console.log('RELLAB load failed: '+e);
+     render()})}
 var _rlRender=window.render;
 window.render=function(){_rlRender();
   if(S.page==='reliability')setTimeout(load,0)};
