@@ -61,7 +61,73 @@ def merge_rules(merchant_rules: dict | None) -> dict:
     return rules
 
 
-def evaluate(rules: dict, ctx: PolicyContext) -> PolicyResult:
+def active_rules(db, org_id: str, merchant) -> tuple[dict, str]:
+    """Resolve the EFFECTIVE rule set for a merchant — the single enforcement source.
+
+    Live, latest-version Policy rows are merged in human_id order; unknown/legacy
+    keys from merchant.config["policy_rules"] are applied only where no versioned
+    policy already speaks. Returns (merged rules incl. defaults, version label)
+    where the label names every policy version that contributed (audit trail).
+    """
+    from paytwin_api.models import Policy
+
+    rows = (db.query(Policy)
+            .filter(Policy.organization_id == org_id,
+                    Policy.merchant_id == merchant.id,
+                    Policy.status == "live")
+            .order_by(Policy.human_id, Policy.version.desc()).all())
+    latest: dict[str, Policy] = {}
+    for r in rows:
+        latest.setdefault(r.human_id, r)  # first seen per human_id = highest version
+    merged: dict = {}
+    labels: list[str] = []
+    for hid in sorted(latest):
+        row = latest[hid]
+        merged.update(row.rules or {})
+        labels.append(f"{hid}:v{row.version}")
+    for key, value in ((merchant.config or {}).get("policy_rules") or {}).items():
+        merged.setdefault(key, value)  # legacy fallback only
+    version = "+".join(labels) if labels else "defaults"
+    return merge_rules(merged), version
+
+
+_INT_BOUNDS = {
+    "max_attempts": (1, 10),
+    "amount_cap": (100, 10_000_000),   # paise: ₹1 .. ₹1,00,000 per action
+    "contact_budget_ok": (0, 10),
+    "cooldown_ok": (0, 1440),          # minutes
+}
+_BOOL_RULES = {"provider_healthy", "consent_on_file",
+               "within_mandate_window", "agent_authority_verified"}
+
+
+def validate_rules(rules: dict) -> str | None:
+    """Strict typed/range validation for saved policies. Returns error text or None."""
+    for key, value in (rules or {}).items():
+        if key in _INT_BOUNDS:
+            lo, hi = _INT_BOUNDS[key]
+            if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
+                return (f"{key} must be an integer in [{lo}, {hi}] "
+                        f"(got {value!r})")
+        elif key in _BOOL_RULES:
+            if not isinstance(value, bool):
+                return f"{key} must be a boolean (got {value!r})"
+        elif key == "dnd_window_ok":
+            if not isinstance(value, dict):
+                return f"dnd_window_ok must be an object (got {value!r})"
+            s, e = value.get("start_hour"), value.get("end_hour")
+            for part, h in (("start_hour", s), ("end_hour", e)):
+                if isinstance(h, bool) or not isinstance(h, int) or not 0 <= h <= 23:
+                    return f"dnd_window_ok.{part} must be an integer 0-23 (got {h!r})"
+            if s == e:
+                return "dnd_window_ok.start_hour must differ from end_hour"
+        else:
+            return f"unrecognized rule id: {key}"
+    return None
+
+
+def evaluate(rules: dict, ctx: PolicyContext,
+             version_label: str | None = None) -> PolicyResult:
     failed: list[str] = []
     checks: dict = {}
 
@@ -110,8 +176,9 @@ def evaluate(rules: dict, ctx: PolicyContext) -> PolicyResult:
          f"last action {ctx.minutes_since_last_action:.0f}m ago < {cooldown}m cooldown")
 
     if failed:
+        base = version_label or "rules"
         return PolicyResult(PolicyDecision.BLOCK, failed, checks,
-                            f"rules@{len(rules)}-hard")
+                            f"{base}@{len(rules)}-hard")
 
     # ---- autonomy ladder (only healthy candidates reach here) ----
     mode = int(ctx.autonomy_mode)
@@ -127,4 +194,5 @@ def evaluate(rules: dict, ctx: PolicyContext) -> PolicyResult:
     else:  # OBSERVE / RECOMMEND
         decision = PolicyDecision.REQUIRE_APPROVAL
 
-    return PolicyResult(decision, [], checks, f"rules@{len(rules)}-mode{mode}")
+    base = version_label or "rules"
+    return PolicyResult(decision, [], checks, f"{base}@{len(rules)}-mode{mode}")

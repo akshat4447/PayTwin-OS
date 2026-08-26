@@ -27,7 +27,8 @@ class SimulatorConnector(PaymentProviderConnector):
     def verify_webhook(self, body: bytes, signature: str, secret: str) -> bool:
         return hmac_ok(body, signature, secret)
 
-    def normalize(self, payload: dict, organization_id: str, merchant_id: str) -> CanonicalEvent:
+    def normalize(self, payload: dict, organization_id: str, merchant_id: str,
+                  headers: dict | None = None) -> CanonicalEvent:
         try:
             etype = _STATUS_MAP[payload["event"]] if payload["event"] in _STATUS_MAP else payload["event"]
             data = payload["data"]
@@ -38,6 +39,9 @@ class SimulatorConnector(PaymentProviderConnector):
                 "psp": data.get("psp"),
                 "gateway": data.get("gateway"),
             }
+            from paytwin_api.config import get_settings
+            from paytwin_api.connectors.base import pseudonymize_ref
+
             return CanonicalEvent(
                 type=etype,
                 organization_id=organization_id,
@@ -51,7 +55,8 @@ class SimulatorConnector(PaymentProviderConnector):
                 payload={
                     "failure_class": data.get("error_reason"),
                     "latency_ms": data.get("latency_ms"),
-                    "customer_ref": data.get("customer_ref"),
+                    "customer_ref": pseudonymize_ref(
+                        data.get("customer_ref"), get_settings().hash_salt),
                     "order_ref": data.get("order_id"),
                     "attempt_no": data.get("attempt_no", 1),
                     "group_id": data.get("group_id") or data["payment_id"],

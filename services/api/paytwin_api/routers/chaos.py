@@ -32,6 +32,15 @@ class ChaosBody(BaseModel):
 def inject(scenario: str, body: ChaosBody,
            p: Principal = Depends(current_principal),
            db: Session = Depends(get_db)):
+    # Chaos writes synthetic traffic into the live ledger and can trigger
+    # autopilot — demo/sandbox only, and only for admin roles (a write role
+    # like ops_oncall must never be able to contaminate production data).
+    if get_settings().is_prod:
+        return err(403, "chaos_disabled_in_production",
+                   "chaos injection is disabled outside demo/sandbox environments")
+    if p.role not in ("org_admin", "risk_admin"):
+        return err(403, "forbidden_role",
+                   "chaos injection requires org_admin or risk_admin")
     require_write(p)
     if scenario not in SCENARIOS:
         return err(404, "unknown_scenario", f"choose one of {SCENARIOS}")

@@ -2,11 +2,14 @@
 
 Base: `http://localhost:8000`. Auth: `Authorization: Bearer <api_key>` (dev keys seeded).
 Errors: `{"error": {"code", "message", "details"}}`. All list endpoints accept
-`?scope=org|<merchant_id>` and are tenant-filtered. OpenAPI at `/openapi.json`.
+`?scope=org|<merchant_id>` and are tenant-filtered. OpenAPI at `/api/openapi.json`
+(swagger UI at `/api/docs`). Rate limit: `/api/*` allows `PAYTWIN_RATE_LIMIT_PER_MIN`
+(default 240) requests/min per credential — excess ⇒ 429 `rate_limited` + `Retry-After`;
+`/webhooks/*` and `/api/health` are exempt.
 
 ## System
-- `GET /api/health` → {status, db, redis, worker_lag_s, version}
-- `GET /api/meta` → {org, merchants[], autonomy_modes, counts, server_time, feature_flags}
+- `GET /api/health` → {status, db, version, env} (no auth required)
+- `GET /api/meta` → {org, role, merchants[{id,name,short,color,mode,stage,sr_base,gmv,protected}], feature_flags{llm,env}}
 - `GET /metrics` → Prometheus text format
 - `GET /api/stream?scope=` → SSE: `heartbeat`, `incident`, `policy_decision`, `action`, `metric` events
 
@@ -58,8 +61,17 @@ Errors: `{"error": {"code", "message", "details"}}`. All list endpoints accept
 
 ## Chaos (demo control)
 - `POST /api/chaos/{scenario}` {scope, duration_min?} — scenario ∈ psp_degradation,
-  issuer_outage, gateway_latency, checkout_regression, webhook_lag, auth_failures, rate_limit
-- `POST /api/webhooks/{provider}` — connector ingress (HMAC `X-PayTwin-Signature: sha256=...`)
+  issuer_outage, gateway_latency, checkout_regression, webhook_lag, auth_failures, rate_limit.
+  Admin roles only; **disabled in production (403)**.
+- `POST /webhooks/{provider}` — connector ingress (HMAC `X-PayTwin-Signature: sha256=...`;
+  bad signature ⇒ 401 + dead-letter; malformed ⇒ 422 + PII-redacted DLQ)
+
+## Reliability Lab
+- `GET /api/reliability/overview` · `GET /api/reliability/suites` · `POST /api/reliability/run`
+- `GET /api/reliability/runs` · `GET /api/reliability/runs/{id}` · `GET /api/reliability/findings`
+- `GET /api/reliability/release-gate` → READY/WARNING/BLOCKED · `POST /api/reliability/webhook-lab/{fault}`
+- Deterministic integration-assurance runs traced to hashed Razorpay requirements
+  (docs/razorpay/sources); critical findings always block the gate.
 
 ## Frontend binding rule
 The UI keeps its exact look; every screen's data comes from the endpoints above. If the API

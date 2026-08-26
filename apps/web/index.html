@@ -359,12 +359,14 @@ function renderNotifs(){const b=$('.iconbtn .ping');if(b&&!S.notifs.length)b.rem
 function audit(action,obj){S.auditN++;AUD.unshift({id:'DEC-'+S.auditN,t:nowT(),actor:S.page==='commander'?'agent':'system',action,st:'Logged',tone:'mut'});if(AUD.length>14)AUD.pop();if(obj)notify('Audit',action)}
 let tickN=0,syncAgo=7;
 setInterval(()=>{tickN++;syncAgo++;if(syncAgo>15)syncAgo=Math.floor(Math.random()*4)+1;
- // live SR series drift
- ORG.merchants.forEach(k=>{const arr=series[k],r=Math.random(),base=MERCH[k].srBase;let nx=arr[arr.length-1]+(r-.5)*.5;const inc=INC.find(i=>i.merch===k&&['P1','P2'].includes(i.sev)&&i.state!=='RESOLVED');if(inc)nx-=inc.sev==='P1'?3.2:1.1;arr.push(Math.max(base-6,Math.min(base+1,nx)));if(arr.length>60)arr.shift()});
- // risk decay on mitigating incidents
- INC.forEach(i=>{if(i.state==='MITIGATING'&&i.risk>400)i.risk=Math.max(400,i.risk-Math.random()*220)});
- // ambient stream
- if(tickN%2===0){const k=ORG.merchants[Math.floor(Math.random()*ORG.merchants.length)];STREAM.unshift({t:nowT(),m:k,x:['pay.authorized '+inr(300+Math.random()*4000),'pay.failed BANK_TIMEOUT','mandate.debit_ok '+inr(199),'checkout.started','payment_link.paid '+inr(1499)][Math.floor(Math.random()*5)]});if(STREAM.length>9)STREAM.pop()}
+ if(!window.__PTW_LIVE){ // synthetic telemetry is DEMO-engine only; LIVE uses /api/stream
+  // live SR series drift
+  ORG.merchants.forEach(k=>{const arr=series[k],r=Math.random(),base=MERCH[k].srBase;let nx=arr[arr.length-1]+(r-.5)*.5;const inc=INC.find(i=>i.merch===k&&['P1','P2'].includes(i.sev)&&i.state!=='RESOLVED');if(inc)nx-=inc.sev==='P1'?3.2:1.1;arr.push(Math.max(base-6,Math.min(base+1,nx)));if(arr.length>60)arr.shift()});
+  // risk decay on mitigating incidents
+  INC.forEach(i=>{if(i.state==='MITIGATING'&&i.risk>400)i.risk=Math.max(400,i.risk-Math.random()*220)});
+  // ambient stream
+  if(tickN%2===0){const k=ORG.merchants[Math.floor(Math.random()*ORG.merchants.length)];STREAM.unshift({t:nowT(),m:k,x:['pay.authorized '+inr(300+Math.random()*4000),'pay.failed BANK_TIMEOUT','mandate.debit_ok '+inr(199),'checkout.started','payment_link.paid '+inr(1499)][Math.floor(Math.random()*5)]});if(STREAM.length>9)STREAM.pop()}
+ }
  // commander typing cleanup handled in page
  pageTick&&pageTick();
 },1000);
@@ -611,7 +613,7 @@ function sendChat(v){v=(v||'').trim();if(!v)return;const inp=$('#cmdIn');if(inp)
  setTimeout(()=>{$('#trace').insertAdjacentHTML('beforeend','<div class="t-ok">\u2713 evidence_pack('+(INC[S.inc]||INC[0]).id+') \u00b7 '+Math.round(40+Math.random()*90)+'ms</div>')},250);
  const a=cmdAnswer(v);let shown='',i=0;const full=a.t;S.chat.push({r:'ai',t:'',c:a.c});const mi=S.chat.length-1;
  const tm=setInterval(()=>{i+=4;shown=full.slice(0,i);S.chat[mi].t=shown;const box=$('#chatbox');if(box){const last=box.lastElementChild,b=last&&last.querySelector('.bub');if(b)b.innerHTML=shown+(a.c?'<div class="meta">'+a.c.map(function(c){return '<span class="chip">'+c+'</span>'}).join('')+'</div>':'');box.scrollTop=box.scrollHeight}if(i>=full.length)clearInterval(tm)},24)}
-document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el)return;const act=el.dataset.act,id=el.dataset.id,k=el.dataset.k,p=el.dataset.p,q=el.dataset.q;
+document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if(!el)return;const act=el.dataset.act,id=el.dataset.id||el.dataset.scope,k=el.dataset.k,p=el.dataset.p,q=el.dataset.q;
  if(act==='nav'){S.page=p;render()}
  else if(act==='theme'){S.theme=S.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=S.theme;render()}
  else if(act==='palette')openPal();else if(act==='pclose')closePal();
@@ -652,7 +654,7 @@ const NAV=[['Command center',['overview','cohort','warroom']],['Intelligence',['
 let pageTick=null;
 function render(){document.body.className=S.env==='simulation'?'sim':'';let mount=$('#app');if(!mount){mount=document.createElement('div');mount.id='app';document.body.appendChild(mount)}
  const inc=INC[S.inc]||INC[0];
- const pgf={overview:pgOverview,cohort:pgCohort,warroom:pgWar,twinlab:pgTwin,policies:pgPol,commander:pgCmd,experiments:pgExp,modelhealth:pgModel,audit:pgAudit,integrations:pgInt,merchants:pgMerchants,funnel:pgFunnel,bench:pgBench}[S.page]||pgOverview;
+ const pgf={overview:pgOverview,cohort:pgCohort,warroom:pgWar,twinlab:pgTwin,policies:pgPol,commander:pgCmd,experiments:pgExp,modelhealth:pgModel,audit:pgAudit,integrations:pgInt,merchants:pgMerchants,funnel:pgFunnel,bench:pgBench,reliability:pgReliability}[S.page]||pgOverview;
  mount.innerHTML='<div class="app"><aside class="sidebar"><div class="brand"><span class="mark">'+ic('shield',14)+'</span><span class="wm">paytwin<small>OS</small></span><span class="ver">v2.0</span></div>'+
  '<button class="wsbtn" data-act="orgmenu"><span class="wslogo">N</span><div class="wsmeta"><b>'+esc(S.scope==='org'?ORG.name:MERCH[S.scope].name)+'</b><small>'+(S.scope==='org'?'Organization \u00b7 all merchants':MERCH[S.scope].mode.split(' \u00b7 ')[0])+'</small></div><span class="chev">'+ic('chev',14)+'</span></button>'+
  '<nav class="nav">'+NAV.map(g=>'<p class="grp">'+g[0]+'</p>'+g[1].map(p=>'<button class="item'+(S.page===p?' on':'')+'" data-act="nav" data-p="'+p+'">'+ic(PAGES[p][1],16)+'<span class="lbl">'+PAGES[p][0]+'</span>'+(p==='warroom'&&activeInc().length?'<span class="dot"></span>':'')+'</button>').join('')).join('')+'</nav>'+
@@ -669,7 +671,11 @@ function ovTick(){const r=$('[data-live=risk]');if(r){const nv=totalRisk();animN
  $$('[data-live^=risk-]').forEach(el=>{const i=INC.find(x=>x.id===el.dataset.live.slice(5));if(i)el.textContent=inr(i.risk)});
  const c=$('[data-live=clock]');if(c)c.textContent=nowT()+' IST';
  const sy=$('[data-live=sync]');if(sy)sy.textContent=syncAgo}
-function pgWar(){const inc=INC[S.inc]||INC[0];const b=inc.budget;
+function pgWar(){const inc=INC[S.inc]||INC[0];
+ if(!inc)return '<div class="pagegrid"><div class="crumb">Incidents</div><div class="card"><div class="empty">'+ic('check',22)+'<p><b>No incidents.</b> Nothing is degrading right now — the war room fills in the moment detection opens one.</p></div></div></div>';
+ if(!MERCH[inc.merch])inc.merch=Object.keys(MERCH)[0]||inc.merch;
+ const b=inc.budget||{att:0,max:3,bud:0,bmax:20000,win:0,wmax:18};
+ const causes=(inc.causes&&inc.causes.length)?inc.causes:[];
  return '<div class="pagegrid"><div class="crumb">Incidents / '+inc.id+' · '+(S.scope==='org'?MERCH[inc.merch].name:'')+'</div>'+
  '<div class="trow"><div><p class="eyebrow" style="color:var(--'+(inc.sev==='P1'?'red':inc.sev==='P2'?'amb':'acc')+')">'+inc.sev+' · '+inc.state+'</p><h1>'+esc(inc.title)+'</h1><p class="sub">Detected '+inc.det+' IST · '+esc(inc.cohort)+' · merchant: '+esc(MERCH[inc.merch].name)+'</p></div>'+
  '<div class="toolbar"><button class="btn" data-act="shareBrief">'+ic('dl',14)+' Share brief</button><button class="btn pr" data-act="askCmd">'+ic('bot',14)+' Ask Commander</button></div></div>'+
@@ -677,9 +683,8 @@ function pgWar(){const inc=INC[S.inc]||INC[0];const b=inc.budget;
  (inc.state!=='RESOLVED'?'<div class="banner"><span class="ic">'+ic('alert',18)+'</span><div><b>'+(inc.state==='MITIGATING'?'Revenue is protected while mitigation runs.':'Diagnosis in progress — autopilot holding at safe defaults.')+'</b><p>'+(inc.state==='MITIGATING'?'Bounded action live with rollback guardrail armed.':'No autonomous action until evidence coverage ≥ 0.75.')+'</p></div><div class="amt"><small style="color:var(--mut)">at-risk GMV</small><br><b class="num" data-live="risk-'+inc.id+'">'+inr(inc.risk)+'</b></div></div>':'<div class="banner ok"><span class="ic">'+ic('check',18)+'</span><div><b>Resolved.</b><p>Postmortem drafted by Commander · recovery attributed causally.</p></div></div>')+
  '<div class="grid3">'+
  '<div class="card"><div class="hd"><h2>Progression</h2></div><ul class="tl">'+inc.ev.map(e=>'<li class="'+(e.st==='act'?'act':'done')+'"><time>'+e.t+'</time><b>'+e.ti+'</b><p>'+e.tx+'</p></li>').join('')+'</ul></div>'+
- '<div class="card"><div class="hd"><h2>Causal evidence</h2><span class="chip">coverage '+(0.6+inc.causes.length*.12).toFixed(2)+'</span></div>'+
- netGraph(inc.causes[0][0].split(' ')[0])+
- '<div style="margin-top:10px">'+inc.causes.map(c=>'<div class="cause '+(c[2]==='a'?'a':c[2]==='r'?'r':'')+'"><b style="flex:1">'+c[0]+'</b><i style="width:'+(c[1]*160)+'px"></i><strong>'+c[1]+'</strong></div>').join('')+'</div>'+
+ '<div class="card"><div class="hd"><h2>Causal evidence</h2><span class="chip">coverage '+(0.6+causes.length*.12).toFixed(2)+'</span></div>'+
+ (causes.length?netGraph(String(causes[0][0]).split(' ')[0])+'<div style="margin-top:10px">'+causes.map(c=>'<div class="cause '+(c[2]==='a'?'a':c[2]==='r'?'r':'')+'"><b style="flex:1">'+c[0]+'</b><i style="width:'+(c[1]*160)+'px"></i><strong>'+c[1]+'</strong></div>').join('')+'</div>':'<div class="empty" style="padding:18px 0"><p>Root-cause analysis has not produced ranked edges yet.</p></div>')+
  '<p style="font-size:11.5px;color:var(--dim);margin-top:8px">Scores combine graph propagation, counterfactual masking and change-point alignment. Placebo refuter passed on top candidate \u2713</p></div>'+
  '<div class="card"><div class="hd"><h2>Decision panel</h2><span class="pill acc">EV-ranked</span></div>'+
  inc.cands.map(c=>{if(c.st==='blocked')return '<div style="border:1px solid rgba(240,78,94,.45);border-radius:11px;padding:10px 12px;margin-bottom:10px;background:rgba(240,78,94,.07)"><div style="display:flex;justify-content:space-between;align-items:center"><b style="color:var(--red)">\u26D4 '+c.a+'</b><strong class="num" style="color:var(--red)">'+inr(c.ev)+'</strong></div><small style="color:var(--mut);font-size:11.5px;display:block;margin-top:3px">BLOCKED BY POLICY · '+c.why+'</small></div>';
@@ -711,8 +716,13 @@ render();
 (function(){
 'use strict';
 var qs=new URLSearchParams(location.search);
+/* Key handling: read once into memory, then scrub surfaces.
+   - ?key= is stripped from the URL (browser history) immediately
+   - localStorage is cleared (legacy migration) and never re-written
+   - the key lives only in this closure for the page's lifetime */
 var KEY=qs.get('key')||localStorage.getItem('paytwin_api_key')||'';
-if(qs.get('key')){try{localStorage.setItem('paytwin_api_key',KEY)}catch(e){}}
+try{localStorage.removeItem('paytwin_api_key')}catch(e){}
+if(qs.get('key')){try{history.replaceState(null,'',location.pathname+location.hash)}catch(e){}}
 var H=KEY?{'Authorization':'Bearer '+KEY}:{};
 var LIVE=false;
 
@@ -738,12 +748,15 @@ function hydrate(meta,ov,incs,pols,blocked,models){
       srBase:m.sr_base};});
   if(ids.length)ORG.merchants=ids;
   INC.length=0;
-  (incs||[]).forEach(function(i){INC.push({id:i.human_id,sev:i.sev,
-    title:i.title,merch:Object.keys(MERCH)[0]||'mgro',
-    cohort:[i.cohort.issuer,i.cohort.method,i.cohort.psp].filter(Boolean).join(' × ')
-      ||'—',state:i.state,det:'now',risk:Math.round(i.rar_paise/100),
-    risk0:Math.round(i.rar_paise/100),ev:[],causes:[],
-    cands:[],budget:{att:0,max:3,bud:0,bmax:20000,win:0,wmax:18}})});
+  (incs||[]).forEach(function(i){
+    var merch=(i.merchant_id&&MERCH[i.merchant_id])?i.merchant_id:ids[0]||'mgro';
+    INC.push({id:i.human_id,sev:i.sev,
+      title:i.title,merch:merch,
+      cohort:[i.cohort.issuer,i.cohort.method,i.cohort.psp].filter(Boolean).join(' × ')
+        ||'—',state:i.state,det:'now',
+      risk:Math.round((i.rar_paise||0)/100),
+      risk0:Math.round((i.rar_lo_paise||0)/100),ev:[],causes:[],
+      cands:[],budget:{att:0,max:3,bud:0,bmax:20000,win:0,wmax:18}})});
   POLICIES.length=0;
   (pols||[]).forEach(function(p){POLICIES.push({id:p.human_id,name:p.name,
     desc:p.name,ver:'v'+p.version,yaml:'(typed rules from API)',
@@ -758,26 +771,49 @@ function hydrate(meta,ov,incs,pols,blocked,models){
       c:'ECE '+(m.metrics&&m.metrics.ece?m.metrics.ece.toFixed(3):'—'),
       st:m.stage.charAt(0)+m.stage.slice(1).toLowerCase(),
       tone:m.stage==='CHAMPION'?'grn':'mut'})})}
+  // headline metrics from the API (paise → rupees exactly once)
+  S.gmv=Math.round((ov.metrics.gmv_mtd_paise||0)/100);
   S.prot=Math.round((ov.metrics.protected_paise||0)/100);
   S.rec=Math.round((ov.metrics.retries_avoided||0));
+  S.sr=((ov.metrics.sr_bp||0)/100);
   ids.forEach(function(k){
     series[k]=(ov.pulse||[]).map(function(bp){return bp/100})});
 }
 
 function refresh(){
-  Promise.all([api('/api/overview'),api('/api/incidents')])
+  var scopeQ=(S.scope&&S.scope!=='org')?'?scope='+encodeURIComponent(S.scope):'';
+  Promise.all([api('/api/overview'+scopeQ),api('/api/incidents'+scopeQ)])
    .then(function(rs){
      var ov=rs[0],incs=rs[1];
      INC.length=0;
-     (incs||[]).forEach(function(i){INC.push({id:i.human_id,sev:i.sev,
-       title:i.title,merch:Object.keys(MERCH)[0]||'mgro',cohort:
-       [i.cohort.issuer,i.cohort.method,i.cohort.psp].filter(Boolean)
-        .join(' × ')||'—',state:i.state,det:hhmm(i.detected_at||''),
-       risk:Math.round(i.rar_paise/100),risk0:Math.round(i.rar_lo_paise/100),
-       ev:[],causes:[],cands:[],
-       budget:{att:0,max:3,bud:0,bmax:20000,win:0,wmax:18}})});
+     (incs||[]).forEach(function(i){
+       var merch=(i.merchant_id&&MERCH[i.merchant_id])?i.merchant_id:Object.keys(MERCH)[0]||'mgro';
+       INC.push({id:i.human_id,sev:i.sev,
+         title:i.title,merch:merch,cohort:
+         [i.cohort.issuer,i.cohort.method,i.cohort.psp].filter(Boolean)
+          .join(' × ')||'—',state:i.state,det:hhmm(i.detected_at||''),
+         risk:Math.round((i.rar_paise||0)/100),
+         risk0:Math.round((i.rar_lo_paise||0)/100),
+         ev:[],causes:[],cands:[],
+         budget:{att:0,max:3,bud:0,bmax:20000,win:0,wmax:18}})});
+     S.gmv=Math.round((ov.metrics.gmv_mtd_paise||0)/100);
+     S.prot=Math.round((ov.metrics.protected_paise||0)/100);
      S.rec=Math.round((ov.metrics.retries_avoided||0));
+     S.sr=((ov.metrics.sr_bp||0)/100);
+     var ids=ORG.merchants||[];
+     ids.forEach(function(k){
+       series[k]=(ov.pulse||[]).map(function(bp){return bp/100})});
      render();}).catch(function(){})}
+
+/* Escape-then-format Markdown: hostile API/LLM output can never inject HTML. */
+function mdSafe(s){s=String(s==null?'':s);
+  s=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>')
+     .replace(/`([^`]+)`/g,'<code>$1</code>')
+     .replace(/^###?\s?(.+)$/gm,'<b>$1</b>')
+     .replace(/\n/g,'<br>');
+  return s}
+window.mdSafe=mdSafe;  // exposed for the release self-test hook
 
 var _sendChat=sendChat,_inject=inject,_batchReport=batchReport,
     _auditExport=auditExport;
@@ -785,24 +821,45 @@ window.sendChat=function(v){v=(v||'').trim();if(!v)return;
   if(!LIVE)return _sendChat(v);
   S.chat.push({r:'you',t:esc(v)});render();
   api('/api/commander/chat',{method:'POST',body:{message:v}})
-   .then(function(r){var t=(r.reply_md||'')
-     +(r.citations&&r.citations.length?' ['+r.citations.join('] [')+']':'');
+   .then(function(r){var t=mdSafe((r.reply_md||'')
+     +(r.citations&&r.citations.length?' ['+r.citations.map(esc).join('] [')+']':''));
      S.chat.push({r:'ai',t:t,c:r.citations||[]});render();})
    .catch(function(){S.chat.push({r:'ai',
      t:'(API unreachable - deterministic local engine)'});render();});};
 window.inject=function(kind){if(!LIVE)return _inject(kind);
-  var map={psp:'psp_degradation',issuer:'issuer_outage',
-           latency:'gateway_latency'};
+  if(kind==='llm'){ // local resilience drill — NEVER a chaos injection
+    return _inject('llm')}
+  var map={psp:'psp_degradation',issuer:'issuer_outage'};
+  var scenario=map[kind];
+  if(!scenario){toast('Unknown drill — nothing injected');return}
   var scope=S.scope!=='org'?S.scope:(ORG.merchants[0]||'mer1');
-  api('/api/chaos/'+(map[kind]||map.psp),{method:'POST',
+  api('/api/chaos/'+scenario,{method:'POST',
     body:{scope:scope,duration_min:10}})
    .then(function(r){toast('Chaos injected · '+r.events_ingested+' events live');
      refresh();})
-   .catch(function(){_inject(kind)});};
+   .catch(function(err2){
+     if(/http 403/.test(String(err2))){toast('Chaos blocked by the API (admin-only, non-prod)')}
+     else{_inject(kind)}});};
 document.addEventListener('click',function(e){
   if(!LIVE)return;
   var el=e.target.closest('[data-act]');
-  if(el&&el.dataset.act==='runSim'){
+  if(!el)return;
+  var act=el.dataset.act;
+  // Server-confirmed incident actions: no local-only success toasts.
+  if(act==='resolveInc'||act==='haltInc'||act==='approve'){
+    e.stopImmediatePropagation();
+    var incId=el.dataset.inc||el.dataset.id;
+    var inc=INC.find(function(x){return x.id===incId})||INC[S.inc]||INC[0];
+    if(!inc){toast('No incident selected');return}
+    var path={resolveInc:'resolve',haltInc:'halt',approve:'approve'}[act];
+    api('/api/incidents/'+inc.id+'/'+path,{method:'POST'})
+     .then(function(r){toast((act==='approve'?'Approved & executed · ':act==='haltInc'?'Autopilot halted · ':'Resolved · ')+(r.state||r.execution_human_id||inc.id));
+       refresh();})
+     .catch(function(err2){
+       if(/http 409/.test(String(err2)))toast('Nothing to '+(act==='approve'?'approve':act==='haltInc'?'halt':'resolve')+' — already handled');
+       else toast('API rejected the action ('+String(err2).slice(0,40)+')');});
+    return}
+  if(act==='runSim'){
     e.stopImmediatePropagation();
     var scope=S.scope!=='org'?S.scope:(ORG.merchants[0]||'mer1');
     var scen=S.scen==='links'?'payment_links':
@@ -817,6 +874,40 @@ document.addEventListener('click',function(e){
        render();toast('Twin run complete · seed '+r.seed+' · LIVE');})
      .catch(function(){toast('Twin API unreachable')});}
 },true);
+
+/* LIVE telemetry: consume the real SSE endpoint (commit-ordered, per-org).
+   EventSource cannot send Authorization headers, so stream over fetch. */
+function startStream(){
+  fetch('/api/stream',{headers:H}).then(function(r){
+    if(!r.ok||!r.body)throw new Error('sse '+r.status);
+    var rd=r.body.getReader(),dec=new TextDecoder(),buf='';
+    function pump(){
+      rd.read().then(function(ch){
+        if(ch.done)return;
+        buf+=dec.decode(ch.value,{stream:true});
+        var frames=buf.split('\n\n');buf=frames.pop();
+        frames.forEach(function(f){
+          var ev=null,data='';
+          f.split('\n').forEach(function(line){
+            if(line.indexOf('event:')===0)ev=line.slice(6).trim();
+            else if(line.indexOf('data:')===0)data+=line.slice(5).trim()});
+          if(!ev||ev==='heartbeat'||!data)return;
+          try{var p=JSON.parse(data);
+            if(p.payment_ref||p.status){
+              STREAM.unshift({t:nowT(),
+                m:(p.merchant_id&&MERCH[p.merchant_id])?p.merchant_id:(ORG.merchants[0]||'mgro'),
+                x:(p.event||'payment.updated')+' '+(p.payment_ref||'')+' → '+p.status});
+              if(STREAM.length>9)STREAM.pop()}
+          }catch(e2){}
+        });
+        var s=document.querySelector('[data-live=stream]');
+        if(s)s.innerHTML=streamRows();
+        pump();
+      }).catch(function(){});
+    }
+    pump();
+  }).catch(function(){/* SSE unavailable: periodic refresh still runs */});
+}
 window.batchReport=function(){if(!LIVE)return _batchReport();
   fetch('/api/reports/recovery-batch?hours=720',{headers:H})
    .then(function(r){return r.text()})
@@ -843,9 +934,9 @@ if(KEY){
   Promise.all([api('/api/meta',{timeout:2500}),api('/api/overview'),
     api('/api/incidents'),api('/api/policies'),api('/api/policies/blocked'),
     api('/api/models')]).then(function(rs){
-    LIVE=true;
+    LIVE=true;window.__PTW_LIVE=true;
     hydrate(rs[0],rs[1],rs[2],rs[3],rs[4],rs[5]);
-    render();setInterval(refresh,5000);
+    render();setInterval(refresh,5000);startStream();
     toast('LIVE · connected to PayTwin OS API');
   }).catch(function(){LIVE=false;render();
     toast('DEMO · API unreachable - local engine engaged');});
@@ -853,6 +944,52 @@ if(KEY){
   setTimeout(function(){LIVE=false;render();
     toast('DEMO · set paytwin_api_key or ?key=... to go LIVE');},400);
 }
+})();
+</script>
+<script id="ptds-selftest">
+/* ===== Release self-test hook (?selftest=1) — CI greps PASS/FAIL from the DOM.
+   Exercises the historically-crashing flows in-page. No-op without the flag. ===== */
+(function(){
+'use strict';
+if(new URLSearchParams(location.search).get('selftest')!=='1')return;
+var out=[];
+function check(name,fn){try{fn();out.push('PASS '+name)}catch(e){out.push('FAIL '+name+' :: '+e.message)}}
+function run(){
+  check('reliability-route-mapped',function(){
+    if(!PAGES.reliability)throw new Error('reliability missing from PAGES');
+    S.page='reliability';render();
+    var h=document.querySelector('.page h1');
+    if(!h||!/reliability/i.test(h.textContent))throw new Error('reliability fell back: '+(h&&h.textContent));});
+  check('merchant-card-click-no-crash',function(){
+    S.page='merchants';render();
+    var card=document.querySelector('[data-act="scope"][data-scope]');
+    if(!card)throw new Error('no merchant card');
+    card.click(); // data-scope handler: pre-fix this crashed on MERCH[undefined]
+    if(!document.querySelector('.page'))throw new Error('page vanished after click');});
+  check('warroom-zero-incidents-renders',function(){
+    var bak=INC.slice();INC.length=0;S.inc=0;
+    var html=pgWar();INC.push.apply(INC,bak);
+    if(!/No incidents/.test(html))throw new Error('empty state missing');});
+  check('warroom-empty-causes-renders',function(){
+    var inc=INC[0]||{id:'T',sev:'P2',title:'t',merch:'mgro',cohort:'c',state:'DETECTED',det:'x',risk:0,ev:[],cands:[],budget:{}};
+    var bak=inc.causes;inc.causes=[];
+    var html=pgWar();inc.causes=bak;
+    if(!/ranked edges yet|Causal evidence/.test(html))throw new Error('causes guard missing');});
+  check('mdsafe-escapes-html',function(){
+    var s=mdSafe('<img src=x onerror=alert(1)>**bold**');
+    if(/[<]img/.test(s))throw new Error('raw HTML survived: '+s);
+    if(!/[<]b[>]bold/.test(s))throw new Error('markdown formatting lost');});
+  check('key-not-persisted',function(){
+    if(localStorage.getItem('paytwin_api_key'))throw new Error('key found in localStorage');
+    if(/[?&]key=/.test(location.search))throw new Error('?key= still in URL');});
+  var d=document.createElement('pre');d.id='ptds-selftest-out';
+  d.style.cssText='position:fixed;bottom:0;left:0;z-index:99999;background:#000;color:#0f0;font-size:11px;padding:6px;margin:0';
+  d.textContent=out.join('\n');document.body.appendChild(d);
+}
+function when(ready){var t=setInterval(function(){
+  if(ready()){clearInterval(t);run()}},50);
+  setTimeout(function(){clearInterval(t);if(!document.getElementById('ptds-selftest-out'))run()},5000)}
+when(function(){return document.querySelector('.page')});
 })();
 </script>
 <script id="apple-ds-js">

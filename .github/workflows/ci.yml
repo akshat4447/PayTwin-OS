@@ -29,6 +29,13 @@ jobs:
           PAYTWIN_LLM_PROVIDER: none
         run: python -m pytest tests/ -q
 
+      - name: Migration drift check (fresh DB → alembic head)
+        run: |
+          rm -f /tmp/migrate_drift.db
+          PAYTWIN_DATABASE_URL=sqlite:////tmp/migrate_drift.db \
+            alembic -c services/api/alembic.ini upgrade head
+          echo "alembic upgrade head OK on a fresh database"
+
   security:
     runs-on: ubuntu-latest
     steps:
@@ -39,18 +46,36 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Install (editable monorepo)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e packages/contracts -e services/sim -e services/ml -e services/api
+
+      # Security gates FAIL the build — no || true suppression.
       - name: Bandit (static security scan)
         run: |
           pip install bandit
-          bandit -q -r packages services -x .venv || true
+          bandit -q -r packages services -x .venv
 
       - name: pip-audit (dependency CVEs)
         run: |
           pip install pip-audit
-          pip-audit --skip-editable || true
+          pip-audit --skip-editable
 
       - name: Secret scan (naive high-signal patterns)
         run: |
           ! grep -rInE "(ptw_[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}|BEGIN (RSA|OPENSSH) PRIVATE KEY)" \
             --include="*.py" --include="*.md" --include="*.yml" --include="*.html" \
             . || { echo "potential secret committed"; exit 1; }
+
+  ui-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: UI smoke (headless Chrome, incl. regression flows)
+        run: python scripts/ui_smoke.py

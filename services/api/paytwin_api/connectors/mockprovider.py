@@ -30,7 +30,8 @@ class MockProviderConnector(PaymentProviderConnector):
     def verify_webhook(self, body: bytes, signature: str, secret: str) -> bool:
         return hmac_ok(body, signature, secret)
 
-    def normalize(self, payload: dict, organization_id: str, merchant_id: str) -> CanonicalEvent:
+    def normalize(self, payload: dict, organization_id: str, merchant_id: str,
+                  headers: dict | None = None) -> CanonicalEvent:
         try:
             raw_type = payload["type"]
             etype = _TYPE_MAP.get(raw_type)
@@ -44,6 +45,9 @@ class MockProviderConnector(PaymentProviderConnector):
                 "psp": net.get("aggregator"),
                 "gateway": net.get("gateway"),
             }
+            from paytwin_api.config import get_settings
+            from paytwin_api.connectors.base import pseudonymize_ref
+
             return CanonicalEvent(
                 type=etype,
                 organization_id=organization_id,
@@ -57,7 +61,8 @@ class MockProviderConnector(PaymentProviderConnector):
                 payload={
                     "failure_class": ch.get("decline_code"),
                     "latency_ms": ch.get("rtt_ms"),
-                    "customer_ref": ch.get("buyer_ref"),
+                    "customer_ref": pseudonymize_ref(
+                        ch.get("buyer_ref"), get_settings().hash_salt),
                     "order_ref": ch.get("order_id"),
                     "attempt_no": ch.get("attempt", 1),
                     "group_id": ch.get("session") or ch["id"],

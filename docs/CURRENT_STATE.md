@@ -3,6 +3,11 @@
 > **RELIABILITY LAB v1 SHIPPED (2026-08-26)** — native PayTwin module for payment
 > integration assurance. See RELIABILITY LAB section below; the 2026-08-25 UI/audit
 > matrix further down remains accurate.
+>
+> **RELEASE-BLOCKER SPRINT SHIPPED (2026-08-26)** — see that section below for the
+> security/integrity fixes (rate limiting live, tenant-scoped uniques/FKs + audit
+> fork guard, pseudonymization in all connectors, production gates). Suite now
+> **182 passed**.
 
 ## RELIABILITY LAB
 
@@ -25,12 +30,38 @@
 - **Tests:** tests/test_reliability.py — 9 passing (engine determinism, mutation
   detection ≥6, unsigned-zero-effects, API surface, tenant isolation, BLOCKED gate).
 
+## RELEASE-BLOCKER SPRINT (2026-08-26)
+
+Every item landed **with a regression test** (`tests/test_release_blockers.py`,
+`tests/test_connectors.py`, et al.):
+
+1. **Rate limiting is LIVE:** sliding-window per-identity limiter on `/api/*`
+   (default 240 req/min via `PAYTWIN_RATE_LIMIT_PER_MIN`; identity = bearer
+   credential else client host). `/webhooks/*` + `/api/health` exempt; excess ⇒
+   429 `rate_limited` + `Retry-After`; SSE-safe pure ASGI.
+2. **Tenant-scoped integrity (migration `c7d2e8a41b90` on `b47531c6f9e6`):**
+   payments UNIQUE per (merchant, provider, payment_ref); inbox/canonical
+   idempotency per (provider, org, external id); FKs across core relations;
+   audit fork guard UNIQUE(org, prev_hash) + `audit_heads` checkpoint — tail
+   deletion is caught. PostgreSQL RLS companion: `infra/rls.sql`.
+3. **Privacy enforcement:** `customer_ref` salted-hash pseudonymized at
+   canonicalization in **all three connectors** (simulator, razorpay,
+   mockprovider); DLQ payloads PII-redacted + size-capped (<8 KB).
+4. **Production gates:** startup config validation (no sqlite datastore, no dev
+   default secrets, no real-PSP execution in prod — fail fast); chaos routes 403
+   in production; `allow_real_execution=False` by default everywhere.
+5. **Pipeline correctness:** late `created` cannot regress `authorized`;
+   Razorpay authorized/captured carry distinct event ids (capture no longer
+   deduped away); cross-tenant same-ref deliveries never share/regress rows;
+   SSE publishes only post-commit (rollback drops events); commander chat
+   persists its audit record durably.
+
 ## FINAL COMPLETION MATRIX (2026-08-25 audit)
 
 | AREA | REQUIREMENT | STATUS | EVIDENCE |
 |---|---|---|---|
-| Tests | Full suite green | VERIFIED | **156 passed** (`pytest tests/ -q`) in main venv AND a from-scratch venv |
-| Database | Clean-DB migration | VERIFIED | `make migrate` → `b47531c6f9e6 init schema`, 26 tables (SQLite) **and** Postgres 16 container |
+| Tests | Full suite green | VERIFIED | **182 passed** (`pytest tests/ -q`, main venv) incl. the release-blocker suite (+26 tests vs the 156 of this audit) |
+| Database | Clean-DB migration | VERIFIED | `make migrate` → `c7d2e8a41b90` (tenant-scoped uniques/FKs/audit guard, on `b47531c6f9e6 init schema`), 26 tables incl. `audit_heads` (SQLite **and** Postgres 16 container) |
 | Backend | Webhook ingest (HMAC/idempotency/DLQ/outbox) | VERIFIED | suite: test_pipeline, test_connectors |
 | Backend | Payment state machine | VERIFIED | suite: test_models/test_pipeline |
 | ML | Success model train+registry | VERIFIED | evaluate.py: ROC-AUC .604 / ECE .0023 / reproducible; registry rows written by demo |
@@ -70,10 +101,14 @@
 
 ## REGRESSION STATUS
 
-- `pytest tests/ -q` → **156 passed** (main venv, 168s) incl. 9 new audit tests:
-  persistence-across-reconnect, capability/kind alignment, RaR invariants, dirty-DB guard,
-  training determinism, loadtest CLI, clean-world silence.
-- Same suite green in a from-scratch venv (`pip install -e …` fresh).
+- `pytest tests/ -q` → **182 passed** (main venv, ~351s): the previous 156 plus the
+  26-test release-blocker suite — safety gates (chaos RBAC/prod, real-PSP refusal,
+  prod-config validation), tenant isolation (shared payment refs, per-org inbox
+  dedupe), pipeline correctness (late-event monotonicity, Razorpay lifecycle ids,
+  DLQ redaction, ledger pseudonymization), policy enforcement (live-policy block +
+  version attribution, rule type validation), audit/outbox semantics (fork guard,
+  checkpoint tail detection, SSE post-commit), and rate limiting (429s + exemptions).
+- `make verify` re-checks the demo DB audit chain incl. checkpoints (exit ≠ 0 on break).
 
 ## KNOWN LIMITATIONS (non-critical, documented)
 
@@ -89,11 +124,11 @@
 
 ```bash
 source .venv/bin/activate
-python -m pytest tests/ -q                    # 156 passed
+python -m pytest tests/ -q                    # 182 passed
 rm -f /tmp/final.db && PAYTWIN_DATABASE_URL=sqlite:////tmp/final.db \
   python -m paytwin_sim.demo                  # flagship E2E + DEMO_RUN.md
 PAYTWIN_DEMO_RESET=1 make demo                # idempotent re-run path
-make migrate && make loadtest                 # migration + perf numbers
+make migrate && make loadtest && make verify  # migration + perf + audit chain
 python scripts/evaluate.py                    # every EVALUATION.md number
 cd infra && docker compose up -d postgres redis && cd .. && make migrate
 ```

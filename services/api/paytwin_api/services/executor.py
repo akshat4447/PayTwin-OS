@@ -14,15 +14,18 @@ import json
 from datetime import datetime, timezone
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from paytwin_api.config import get_settings
 from paytwin_api.connectors import get_connector
 from paytwin_api.connectors.base import WebhookRejected
 from paytwin_api.connectors.execution import execute_action
-from paytwin_api.models import ActionCandidate, ActionExecution, Merchant, PolicyDecision
+from paytwin_api.models import (ActionCandidate, ActionExecution, Integration,
+                                Merchant, PolicyDecision)
 from paytwin_api.services import audit as audit_svc
-from paytwin_api.services.policy import PolicyContext, PolicyResult, evaluate, merge_rules
+from paytwin_api.services.policy import (PolicyContext, PolicyResult, active_rules,
+                                         evaluate)
 
 
 def _next_human_id(db: Session) -> str:
@@ -45,7 +48,9 @@ def request_execution(db: Session, principal, merchant: Merchant, candidate: Act
     if existing is not None:
         return existing, None  # idempotent replay — no second business action
 
-    rules = merge_rules((merchant.config or {}).get("policy_rules"))
+    # Versioned Policy rows are the SOLE enforcement source; merchant.config
+    # ["policy_rules"] is only a legacy fallback inside active_rules().
+    rules, policy_label = active_rules(db, merchant.organization_id, merchant)
     ctx = PolicyContext(
         merchant_id=merchant.id,
         autonomy_mode=merchant.autonomy_mode,
@@ -63,7 +68,7 @@ def request_execution(db: Session, principal, merchant: Merchant, candidate: Act
         within_mandate_window=bool(candidate.params.get("within_mandate_window", True)),
         agent_authority_verified=bool(candidate.params.get("agent_authority_verified", True)),
     )
-    result: PolicyResult = evaluate(rules, ctx)
+    result: PolicyResult = evaluate(rules, ctx, version_label=policy_label)
 
     ex = ActionExecution(
         organization_id=merchant.organization_id, merchant_id=merchant.id,
@@ -72,8 +77,16 @@ def request_execution(db: Session, principal, merchant: Merchant, candidate: Act
         idempotency_key=key, state="CREATED",
         connector=(merchant.config or {}).get("connector", "simulator"),
     )
-    db.add(ex)
-    db.flush()
+    try:
+        with db.begin_nested():  # savepoint: a concurrent duplicate only rolls this back
+            db.add(ex)
+            db.flush()
+    except IntegrityError:
+        existing = (db.query(ActionExecution)
+                    .filter(ActionExecution.idempotency_key == key).one_or_none())
+        if existing is not None:
+            return existing, None  # lost the race: same execution, no second action
+        raise
 
     dec = PolicyDecision(organization_id=merchant.organization_id, merchant_id=merchant.id,
                          action_execution_id=ex.id, policy_version=result.rules_version,
@@ -124,13 +137,47 @@ def approve_and_execute(db: Session, principal, execution_id: str, actor: str) -
     return ex
 
 
+def _resolve_connector_secret(db: Session, ex: ActionExecution, merchant: Merchant) -> str:
+    """Per-merchant connector secret via the Integration registry (env indirection).
+
+    secret_ref names an ENVIRONMENT VARIABLE — raw secrets are never stored in the
+    DB. The simulator (deterministic sandbox) uses the dev webhook secret.
+    """
+    if ex.connector == "simulator":
+        return get_settings().webhook_secret_simulator
+    integ = (db.query(Integration)
+             .filter(Integration.merchant_id == merchant.id,
+                     Integration.provider == ex.connector).one_or_none())
+    ref = (integ.secret_ref if integ else None) or f"PAYTWIN_{ex.connector.upper()}_SECRET"
+    import os
+
+    sec = os.environ.get(ref, "")
+    if not sec:
+        raise WebhookRejected(f"no secret configured for {ex.connector} (env {ref})")
+    return sec
+
+
 def _dispatch(db: Session, ex: ActionExecution, merchant: Merchant, actor: str) -> None:
+    # Real-PSP execution stays demo/sandbox-only until a provider integration is
+    # certified end-to-end (secret handling, reconciliation, rollback evidence).
+    if ex.connector != "simulator" and not get_settings().allow_real_execution:
+        ex.state = "FAILED_FINAL"
+        ex.outcome = {"error": ("real-PSP execution is disabled (sandbox-only build); "
+                                "set PAYTWIN_ALLOW_REAL_EXECUTION=1 in a sandbox to enable")}
+        audit_svc.append_audit(
+            db, merchant.organization_id, actor=actor, actor_role="executor",
+            action_type="action.failed", object_type="action_execution",
+            object_id=ex.human_id, summary=f"{ex.kind} refused: real PSP execution disabled",
+            details={"connector": ex.connector, "reason": "sandbox_only"},
+            incident_id=ex.incident_id)
+        db.flush()
+        return
     ex.state = "EXECUTING"
     db.flush()
     connector = get_connector(ex.connector)
     try:
         outcome = execute_action(connector, ex.kind, ex.params, ex.idempotency_key,
-                                 get_settings().secret_key)
+                                 _resolve_connector_secret(db, ex, merchant))
         ex.state = "SUCCEEDED"
         ex.outcome = outcome
         ex.connector_ref = outcome.get("ref")

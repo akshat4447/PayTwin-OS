@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Float, Index, Integer, String, JSON, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Index, Integer, String, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from paytwin_api.db import Base
@@ -17,8 +17,10 @@ class Policy(Base):
     )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("pol"))
-    organization_id: Mapped[str] = mapped_column(String(40), index=True)
-    merchant_id: Mapped[str] = mapped_column(String(40), index=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True)
     human_id: Mapped[str] = mapped_column(String(12))  # RP-007
     name: Mapped[str] = mapped_column(String(120))
     version: Mapped[int] = mapped_column(Integer, default=1)
@@ -33,11 +35,14 @@ class PolicyDecision(Base):
     __table_args__ = (Index("ix_pdec_execution", "action_execution_id"),)
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("pdc"))
-    organization_id: Mapped[str] = mapped_column(String(40), index=True)
-    merchant_id: Mapped[str] = mapped_column(String(40), index=True)
-    action_execution_id: Mapped[str] = mapped_column(String(40))
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True)
+    action_execution_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("action_executions.id"), index=True)
     policy_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    policy_version: Mapped[str] = mapped_column(String(30), default="")
+    policy_version: Mapped[str] = mapped_column(String(120), default="")
     decision: Mapped[str] = mapped_column(String(20))  # allow|require_approval|block
     failed_rules: Mapped[list] = mapped_column(JSON, default=list)
     context: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -53,10 +58,14 @@ class ActionExecution(Base):
     )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("act"))
-    organization_id: Mapped[str] = mapped_column(String(40), index=True)
-    merchant_id: Mapped[str] = mapped_column(String(40), index=True)
-    incident_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    candidate_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True)
+    incident_id: Mapped[str | None] = mapped_column(
+        String(40), ForeignKey("incidents.id"), nullable=True)
+    candidate_id: Mapped[str | None] = mapped_column(
+        String(40), ForeignKey("action_candidates.id"), nullable=True)
     human_id: Mapped[str] = mapped_column(String(20), default="")  # ACT-####
     kind: Mapped[str] = mapped_column(String(30))
     params: Mapped[dict] = mapped_column(JSON, default=dict)

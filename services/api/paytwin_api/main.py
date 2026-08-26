@@ -1,6 +1,9 @@
 """FastAPI application: health, meta, webhook ingress; routers added per module."""
 from __future__ import annotations
 
+import json
+import time
+from collections import deque
 from pathlib import Path
 
 from fastapi import FastAPI, Depends, Request
@@ -14,11 +17,54 @@ from paytwin_api.db import make_engine, make_session_factory
 from paytwin_api.deps import current_principal, get_db
 
 settings = get_settings()
+settings.validate_for_env()  # fail fast on unsafe production configuration
 engine = make_engine()
 SessionLocal = make_session_factory(engine)
 
 app = FastAPI(title="PayTwin OS API", version=__version__,
               docs_url="/api/docs", openapi_url="/api/openapi.json")
+
+
+class RateLimitMiddleware:
+    """Sliding-window per-identity limiter on /api/* (settings.rate_limit_per_min).
+
+    Identity = bearer credential when present, else client host. Webhook ingress
+    (/webhooks/*) and /api/health are exempt: machine traffic is HMAC-authed and
+    bursty by design. Pure ASGI middleware — safe for SSE streaming.
+    """
+
+    def __init__(self, app, limit: int = 240):
+        self.app = app
+        self.limit = max(0, int(limit))
+        self._hits: dict[str, deque[float]] = {}
+
+    async def __call__(self, scope, receive, send):
+        if (scope["type"] != "http" or self.limit <= 0
+                or not scope["path"].startswith("/api/")
+                or scope["path"] == "/api/health"):
+            await self.app(scope, receive, send)
+            return
+        headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
+        ident = headers.get("authorization", "") or (
+            scope.get("client", ("?", 0))[0] if scope.get("client") else "?")
+        now = time.monotonic()
+        window = self._hits.setdefault(ident, deque())
+        while window and window[0] <= now - 60.0:
+            window.popleft()
+        if len(window) >= self.limit:
+            body = json.dumps({"error": {"code": "rate_limited",
+                                         "message": "too many requests"}}).encode()
+            await send({"type": "http.response.start", "status": 429,
+                        "headers": [(b"content-type", b"application/json"),
+                                    (b"content-length", str(len(body)).encode()),
+                                    (b"retry-after", b"60")]})
+            await send({"type": "http.response.body", "body": body})
+            return
+        window.append(now)
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(RateLimitMiddleware, limit=settings.rate_limit_per_min)
 
 
 @app.exception_handler(AuthError)

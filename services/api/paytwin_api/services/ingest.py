@@ -6,9 +6,11 @@ Duplicate external_event_id ⇒ 200 {"duplicate": true} (idempotent at-least-onc
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from paytwin_api.config import get_settings
@@ -35,7 +37,7 @@ def _secret_for(provider: str) -> str:
 
 
 def ingest_webhook(db: Session, provider: str, merchant_id: str, body: bytes,
-                   signature: str) -> IngestResult:
+                   signature: str, headers: dict | None = None) -> IngestResult:
     m = db.query(Merchant).filter(Merchant.id == merchant_id).one_or_none()
     if m is None:
         return IngestResult(404, {"error": {"code": "unknown_merchant", "message": merchant_id}})
@@ -44,7 +46,7 @@ def ingest_webhook(db: Session, provider: str, merchant_id: str, body: bytes,
     if not connector.verify_webhook(body, signature or "", _secret_for(provider)):
         db.add(DeadLetter(organization_id=m.organization_id, reason="bad_signature",
                           detail=f"{provider} webhook for {merchant_id}",
-                          payload={"body_sha": body[:64].hex()}))
+                          payload={"body_sha": hashlib.sha256(body).hexdigest()}))
         db.commit()
         return IngestResult(401, {"error": {"code": "bad_signature", "message": "rejected"}})
 
@@ -52,17 +54,20 @@ def ingest_webhook(db: Session, provider: str, merchant_id: str, body: bytes,
         raw_payload = json.loads(body.decode("utf-8"))
         if not isinstance(raw_payload, dict):
             raise ValueError("payload must be an object")
-        event = connector.normalize(raw_payload, m.organization_id, m.id)
+        event = connector.normalize(raw_payload, m.organization_id, m.id, headers=headers)
     except (WebhookRejected, ValueError) as e:
         db.add(DeadLetter(organization_id=m.organization_id, reason="malformed",
-                          detail=str(e)[:480], payload={"raw": _safe_json(body)}))
+                          detail=str(e)[:480], payload=_dlq_payload(body)))
         db.commit()
         return IngestResult(422, {"error": {"code": "malformed_payload", "message": str(e)[:200]}})
 
-    # Idempotency at the inbox
+    # Idempotency at the inbox — tenant-scoped, race-safe: the UNIQUE
+    # (provider, organization, external_event_id) constraint is the arbiter.
     existing = (
         db.query(EventInbox)
-        .filter(EventInbox.provider == provider, EventInbox.external_event_id == event.external_event_id)
+        .filter(EventInbox.provider == provider,
+                EventInbox.organization_id == m.organization_id,
+                EventInbox.external_event_id == event.external_event_id)
         .one_or_none()
     )
     if existing is not None:
@@ -83,6 +88,21 @@ def ingest_webhook(db: Session, provider: str, merchant_id: str, body: bytes,
                        external_event_id=event.external_event_id, signature_ok=True,
                        status="received", payload=raw_payload)
     db.add(inbox)
+    try:
+        with db.begin_nested():  # concurrent retry loses the race, not the request
+            db.flush()
+    except IntegrityError:
+        db.rollback()
+        winner = (
+            db.query(EventInbox)
+            .filter(EventInbox.provider == provider,
+                    EventInbox.organization_id == m.organization_id,
+                    EventInbox.external_event_id == event.external_event_id)
+            .one_or_none()
+        )
+        if winner is not None:
+            return IngestResult(200, {"duplicate": True, "id": winner.id})
+        raise
 
     row = CanonicalEventRow(
         organization_id=event.organization_id, merchant_id=event.merchant_id,
@@ -111,11 +131,39 @@ def ingest_webhook(db: Session, provider: str, merchant_id: str, body: bytes,
                               "late": late, "canonical_id": row.id})
 
 
-def _safe_json(body: bytes) -> dict:
-    import json
+_PII_KEYS = {"customer_ref", "customer_id", "vpa", "email", "phone", "contact",
+             "contact_id", "name", "notes", "description"}
+_DLQ_MAX_BYTES = 8192
 
+
+def _redact(obj, depth: int = 0):
+    """Recursive PII redaction + string capping for dead-letter payloads."""
+    if depth > 6:
+        return "…"
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if str(k).lower() in _PII_KEYS:
+                out[k] = "[redacted]"
+            else:
+                out[k] = _redact(v, depth + 1)
+        return out
+    if isinstance(obj, (list, tuple)):
+        return [_redact(x, depth + 1) for x in list(obj)[:20]]
+    if isinstance(obj, str):
+        return obj[:200]
+    return obj
+
+
+def _dlq_payload(body: bytes) -> dict:
+    """Size-capped, PII-redacted raw payload for the dead-letter queue."""
     try:
-        v = json.loads(body.decode("utf-8"))
-        return v if isinstance(v, dict) else {"raw": str(v)[:400]}
+        parsed = json.loads(body.decode("utf-8"))
+        redacted = _redact(parsed if isinstance(parsed, dict)
+                           else {"raw": str(parsed)[:400]})
     except Exception:
         return {"raw_b64_prefix": body[:120].hex()}
+    if len(json.dumps(redacted, default=str)) > _DLQ_MAX_BYTES:
+        return {"truncated": True, "body_sha256": hashlib.sha256(body).hexdigest(),
+                "keys": list(redacted)[:20] if isinstance(redacted, dict) else None}
+    return redacted

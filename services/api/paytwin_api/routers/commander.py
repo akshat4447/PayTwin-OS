@@ -22,6 +22,7 @@ class ChatBody(BaseModel):
 def chat(body: ChatBody, p: Principal = Depends(current_principal),
          db: Session = Depends(get_db)):
     out = commander_svc.handle_message(db, p, body.message)
+    db.commit()  # the audit entry appended inside handle_message must persist
     return {
         "reply_md": out["reply"],
         "citations": out["citations"],

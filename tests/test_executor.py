@@ -61,16 +61,27 @@ class TestExecutor:
         ex2 = executor.approve_and_execute(db, None, ex.id, actor="akshat")
         assert ex2.state == "SUCCEEDED" and ex2.approved_by == "akshat"
 
-    def test_capability_gap_fails_final(self, db):
+    def test_capability_gap_fails_final(self, db, monkeypatch):
         m = _seed(db, autonomy=4)
         m2 = Merchant(id="mer2", organization_id="org1", name="X", short_code="X2",
                       autonomy_mode=4, config={"connector": "mockprovider"})
         db.add(m2)
         db.commit()
         c = _cand(db, m2)
+        # sandbox gate first: real-PSP execution is disabled by default
         ex, _ = executor.request_execution(db, None, m2, c)
+        assert ex.state == "FAILED_FINAL" and "disabled" in ex.outcome.get("error", "")
+        # with the sandbox flag explicitly on AND the connector secret configured,
+        # the capability gap is the failure
+        from paytwin_api.config import get_settings
+
+        monkeypatch.setattr(get_settings(), "allow_real_execution", True)
+        monkeypatch.setenv("PAYTWIN_MOCKPROVIDER_SECRET", "test-secret")
+        db.expire_all()
+        c2 = _cand(db, m2, count=7)  # distinct params → distinct idempotency key
+        ex2, _ = executor.request_execution(db, None, m2, c2)
         # mockprovider lacks direct_retry → FAILED_FINAL, audited, no fake success
-        assert ex.state == "FAILED_FINAL" and "capability" in ex.outcome.get("error", "")
+        assert ex2.state == "FAILED_FINAL" and "capability" in ex2.outcome.get("error", "")
 
 
 class TestAuditChain:

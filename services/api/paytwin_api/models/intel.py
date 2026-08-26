@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Float, Index, Integer, String, JSON, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Index, Integer, String, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from paytwin_api.db import Base
@@ -15,9 +15,12 @@ class Prediction(Base):
     __table_args__ = (Index("ix_pred_payment", "payment_id"),)
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("prd"))
-    organization_id: Mapped[str] = mapped_column(String(40), index=True)
-    merchant_id: Mapped[str] = mapped_column(String(40), index=True)
-    payment_id: Mapped[str] = mapped_column(String(40))
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True)
+    payment_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("payments.id"))
     model_version: Mapped[str] = mapped_column(String(60))
     feature_version: Mapped[str] = mapped_column(String(30))
     p_success: Mapped[float] = mapped_column(Float)
@@ -35,8 +38,10 @@ class Incident(Base):
     )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("inc"))
-    organization_id: Mapped[str] = mapped_column(String(40), index=True)
-    merchant_id: Mapped[str] = mapped_column(String(40), index=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True)
     human_id: Mapped[str] = mapped_column(String(20))  # INC-2481
     sev: Mapped[str] = mapped_column(String(4), default="P2")
     title: Mapped[str] = mapped_column(String(200))
@@ -70,7 +75,8 @@ class IncidentEvidence(Base):
     __table_args__ = (Index("ix_evid_incident", "incident_id"),)
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("evd"))
-    incident_id: Mapped[str] = mapped_column(String(40))
+    incident_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("incidents.id"), index=True)
     kind: Mapped[str] = mapped_column(String(30))  # detector|rca|simulation|metric|policy|action|experiment
     ref: Mapped[str] = mapped_column(String(120))  # evidence id used by commander chips
     summary: Mapped[str] = mapped_column(String(500))
@@ -83,7 +89,8 @@ class RootCauseCandidate(Base):
     __table_args__ = (Index("ix_rcc_incident", "incident_id"),)
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("rcc"))
-    incident_id: Mapped[str] = mapped_column(String(40))
+    incident_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("incidents.id"), index=True)
     edge_issuer: Mapped[str | None] = mapped_column(String(60), nullable=True)
     edge_method: Mapped[str | None] = mapped_column(String(40), nullable=True)
     edge_psp: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -101,9 +108,12 @@ class Simulation(Base):
     )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("sim"))
-    organization_id: Mapped[str] = mapped_column(String(40), index=True)
-    merchant_id: Mapped[str] = mapped_column(String(40), index=True)
-    incident_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True)
+    incident_id: Mapped[str | None] = mapped_column(
+        String(40), ForeignKey("incidents.id"), nullable=True, index=True)
     scenario: Mapped[str] = mapped_column(String(40))
     seed: Mapped[int] = mapped_column(Integer)
     trials: Mapped[int] = mapped_column(Integer, default=400)
@@ -118,7 +128,8 @@ class ActionCandidate(Base):
     __table_args__ = (Index("ix_cand_incident", "incident_id"),)
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("cnd"))
-    incident_id: Mapped[str] = mapped_column(String(40))
+    incident_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("incidents.id"), index=True)
     kind: Mapped[str] = mapped_column(String(30))  # ActionKind
     label: Mapped[str] = mapped_column(String(120))
     detail: Mapped[str] = mapped_column(String(400), default="")
@@ -129,5 +140,6 @@ class ActionCandidate(Base):
     risk_paise: Mapped[int] = mapped_column(BigInteger, default=0)
     ev_paise: Mapped[int] = mapped_column(BigInteger, default=0)
     rank: Mapped[int] = mapped_column(Integer, default=0)
-    simulation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    simulation_id: Mapped[str | None] = mapped_column(
+        String(40), ForeignKey("simulations.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

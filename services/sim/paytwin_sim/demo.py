@@ -35,7 +35,32 @@ def make_db():
 
     engine = make_engine(os.environ["PAYTWIN_DATABASE_URL"])
     Base.metadata.create_all(engine)
+    _stamp_alembic(engine)
     return make_session_factory(engine)()
+
+
+def _stamp_alembic(engine) -> None:
+    """Mark a create_all()-bootstrapped DB at alembic head.
+
+    Without the stamp, a later `alembic upgrade head` re-runs the init migration
+    and dies with "table already exists". Only stamps fresh databases — an
+    existing alembic_version row is left untouched.
+    """
+    from sqlalchemy import inspect
+
+    if "alembic_version" in inspect(engine).get_table_names():
+        return
+    try:
+        from alembic import command
+        from alembic.config import Config
+
+        ini = pathlib.Path(__file__).resolve().parents[2] / "api" / "alembic.ini"
+        cfg = Config(str(ini))
+        cfg.set_main_option("script_location", str(ini.parent / "alembic"))
+        command.stamp(cfg, "head")
+        print("[demo] stamped alembic head (create_all bootstrap)")
+    except Exception as e:  # stamping is best-effort; never block the demo
+        print(f"[demo] alembic stamp skipped: {e}")
 
 
 MERCHANT_SPECS = [
@@ -49,8 +74,8 @@ MERCHANT_SPECS = [
 
 DEFAULT_POLICIES = [
     ("RP-007", "Soft-decline retry", {
-        "max_attempts": 2, "contact_budget": 2,
-        "dnd_window": {"start_hour": 22, "end_hour": 8}}),
+        "max_attempts": 2, "contact_budget_ok": 2,
+        "dnd_window_ok": {"start_hour": 22, "end_hour": 8}}),
     ("RP-014", "Bounded UPI reroute", {
         "amount_cap": 500_000, "max_attempts": 3}),
     ("RP-021", "Mandate retry calendar", {"within_mandate_window": True}),

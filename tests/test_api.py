@@ -293,8 +293,17 @@ class TestModelsCommanderAuditReportsChaos:
         fin = client.post(f"/api/models/{m.id}/promote",
                           json={"stage": "CHAMPION"}, headers=_h(keys["fin1"]))
         assert fin.status_code == 403
+        # CHAMPION promotion is a PLATFORM operation (shared registry):
+        # even a tenant risk_admin may not flip the global champion.
+        risk = client.post(f"/api/models/{m.id}/promote",
+                           json={"stage": "CHAMPION"}, headers=_h(keys["admin1"]))
+        assert risk.status_code == 403
+        from paytwin_api.auth import new_api_key
+
+        raw, row = new_api_key("org1", "org_admin", user_id="plat")
+        db.add(row); db.commit()
         adm = client.post(f"/api/models/{m.id}/promote",
-                          json={"stage": "CHAMPION"}, headers=_h(keys["admin1"]))
+                          json={"stage": "CHAMPION"}, headers=_h(raw))
         assert adm.status_code == 200 and adm.json()["stage"] == "CHAMPION"
 
     def test_commander_chat_grounding_over_http(self, client, keys, seeded):

@@ -33,7 +33,7 @@ services:
       dockerfile: infra/Dockerfile.api
     environment: &api_env
       PAYTWIN_DATABASE_URL: postgresql+psycopg://paytwin:paytwin_dev@postgres:5432/paytwin
-      PAYTWIN_REDIS_URL: redis://redis:6380/0
+      PAYTWIN_REDIS_URL: redis://redis:6379/0  # in-network port (6380 is host-only)
       PAYTWIN_ENV: development
       PAYTWIN_LLM_PROVIDER: none
       PAYTWIN_WEBHOOK_SECRET_SIMULATOR: sim-secret-dev

@@ -30,7 +30,8 @@ class RazorpayConnector(PaymentProviderConnector):
     def verify_webhook(self, body: bytes, signature: str, secret: str) -> bool:
         return hmac_ok(body, signature, secret, scheme="")  # raw hex, no prefix
 
-    def normalize(self, payload: dict, organization_id: str, merchant_id: str) -> CanonicalEvent:
+    def normalize(self, payload: dict, organization_id: str, merchant_id: str,
+                  headers: dict | None = None) -> CanonicalEvent:
         try:
             raw = payload["event"]
             etype = _EVENT_MAP.get(raw)
@@ -50,12 +51,21 @@ class RazorpayConnector(PaymentProviderConnector):
             if method == "upi" and vpa:
                 cohort["method"] = "upi_intent"
             err = ent.get("error_description")
+            # Razorpay delivers a DISTINCT event id per webhook delivery
+            # (X-Razorpay-Event-Id). Using payment.id instead made lifecycle
+            # progress (authorized → captured, refunds, late auth) look like
+            # duplicates and get dropped. Header first, composite fallback.
+            ext = (headers or {}).get("x-razorpay-event-id")
+            external_event_id = str(ext) if ext else f"{raw}:{ent['id']}"
+            from paytwin_api.config import get_settings
+            from paytwin_api.connectors.base import pseudonymize_ref
+
             return CanonicalEvent(
                 type=etype,
                 organization_id=organization_id,
                 merchant_id=merchant_id,
                 provider=self.provider,
-                external_event_id=str(ent["id"]),
+                external_event_id=external_event_id,
                 occurred_at=_epoch_to_dt(ent.get("created_at")),
                 payment_ref=str(ent["id"]),
                 amount_paise=int(ent.get("amount", 0)),
@@ -63,7 +73,8 @@ class RazorpayConnector(PaymentProviderConnector):
                 payload={
                     "failure_class": (ent.get("error_source") or err or "issuer_decline"),
                     "latency_ms": None,
-                    "customer_ref": ent.get("customer_id"),
+                    "customer_ref": pseudonymize_ref(
+                        ent.get("customer_id"), get_settings().hash_salt),
                     "order_ref": ent.get("order_id"),
                     "attempt_no": 1,
                     "group_id": ent.get("order_id") or ent["id"],

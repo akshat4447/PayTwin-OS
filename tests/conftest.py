@@ -1,14 +1,22 @@
-"""Shared pytest fixtures. Sets test env BEFORE any paytwin import."""
+"""Shared pytest fixtures. Sets test env BEFORE any paytwin import.
+
+Isolation: each pytest PROCESS gets its own sqlite file (data/test-<pid>.db), so
+concurrent runs (or a stray second invocation) can never drop each other's
+schemas — the historical cause of "no such table" flakes.
+"""
 from __future__ import annotations
 
+import atexit
 import os
 import pathlib
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
-os.environ["PAYTWIN_DATABASE_URL"] = f"sqlite:///{_ROOT}/data/test.db"
+_TEST_DB = _ROOT / "data" / f"test-{os.getpid()}.db"
+os.environ["PAYTWIN_DATABASE_URL"] = f"sqlite:///{_TEST_DB}"
 os.environ["PAYTWIN_ENV"] = "development"
 os.environ["PAYTWIN_LLM_PROVIDER"] = "none"
 pathlib.Path(_ROOT / "data").mkdir(exist_ok=True)
+atexit.register(lambda: _TEST_DB.unlink(missing_ok=True))
 
 import pytest  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402

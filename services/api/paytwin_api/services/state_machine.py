@@ -17,6 +17,11 @@ from paytwin_api.models import Payment
 
 _FINAL = {"success", "failed", "refunded"}
 
+# Forward-only ladder: a payment may never move DOWN a rank, regardless of when
+# the event claims to have occurred (a late `created` cannot undo `authorized`).
+_RANK = {"created": 0, "authorized": 1, "timeout": 1, "failed": 2,
+         "success": 2, "refunded": 3}
+
 
 def _aware(dt):
     """SQLite returns naive UTC datetimes; canonical events are tz-aware. Compare safely."""
@@ -26,9 +31,14 @@ def _aware(dt):
 
 
 def _ensure_payment(db: Session, e: CanonicalEvent) -> Payment:
+    # Tenant-scoped lookup: (merchant, provider, payment_ref). A reference reused
+    # under another merchant/org is a DIFFERENT payment — never a cross-tenant write.
     row = (
         db.query(Payment)
-        .filter(Payment.provider == e.provider, Payment.payment_ref == e.payment_ref)
+        .filter(Payment.merchant_id == e.merchant_id,
+                Payment.organization_id == e.organization_id,
+                Payment.provider == e.provider,
+                Payment.payment_ref == e.payment_ref)
         .one_or_none()
     )
     if row is None:
@@ -65,27 +75,40 @@ def apply_event(db: Session, e: CanonicalEvent) -> Payment:
         p.latency_ms = int(e.payload["latency_ms"])
 
     t = e.type
-    if t == "payment.created":
-        p.status = "created"
-    elif t == "payment.authorized":
-        p.status = "authorized"
-    elif t == "payment.timeout":
-        p.status = "timeout"
-    elif t == "payment.failed":
-        p.status = "failed"
-        p.failure_class = e.payload.get("failure_class") or "issuer_decline"
-        p.final_status_at = e.occurred_at
-    elif t == "payment.success":
-        p.status = "success"
-        p.final_status_at = e.occurred_at
-        _mark_group_recovered(db, p, e)
-    elif t == "refund.created":
-        p.status = "refunded"
+    target = _TARGET_STATUS.get(t)
+    if target is not None:
+        # Forward-only by state rank too: a late/out-of-order event (e.g. a
+        # replayed `payment.created`) may never move the payment DOWN the ladder.
+        if _RANK.get(target, 0) < _RANK.get(p.status, 0):
+            return p
+        if target != p.status:
+            _apply_status(db, p, t, target, e)
 
     p.occurred_at = max(_aware(p.occurred_at), e.occurred_at)
     p.updated_at = datetime.now(timezone.utc)
     db.flush()
     return p
+
+
+_TARGET_STATUS = {
+    "payment.created": "created",
+    "payment.authorized": "authorized",
+    "payment.timeout": "timeout",
+    "payment.failed": "failed",
+    "payment.success": "success",
+    "refund.created": "refunded",
+}
+
+
+def _apply_status(db: Session, p: Payment, event_type: str, target: str,
+                  e: CanonicalEvent) -> None:
+    p.status = target
+    if event_type == "payment.failed":
+        p.failure_class = e.payload.get("failure_class") or "issuer_decline"
+        p.final_status_at = e.occurred_at
+    elif event_type == "payment.success":
+        p.final_status_at = e.occurred_at
+        _mark_group_recovered(db, p, e)
 
 
 def _mark_group_recovered(db: Session, p: Payment, e: CanonicalEvent) -> None:

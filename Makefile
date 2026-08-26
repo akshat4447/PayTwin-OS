@@ -55,8 +55,8 @@ loadtest:
 	PAYTWIN_DATABASE_URL=sqlite:///./data/loadtest.db $(PY) scripts/loadtest.py
 
 verify:
-	PAYTWIN_DATABASE_URL=${PAYTWIN_DEMO_URL:-sqlite:///./data/demo.db} \
-		$(PY) -c "from paytwin_api.db import make_engine; from paytwin_api.services.audit import verify_chain; from sqlalchemy.orm import Session; e=make_engine(); s=Session(e); ok,bad=verify_chain(s,'org1'); print('chain ok:',ok,'first_bad:',bad)"
+	PAYTWIN_DATABASE_URL=$${PAYTWIN_DEMO_URL:-sqlite:///$(CURDIR)/data/demo.db} \
+		$(PY) scripts/verify_audit.py
 
 clean:
 	rm -rf .pytest_cache **/__pycache__ data/*.db

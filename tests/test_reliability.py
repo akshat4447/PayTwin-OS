@@ -74,6 +74,10 @@ class ApiClient:
     def post(self, path, json=None, headers=None, **kw):
         return self._run(self._a.post(path, json=json, headers=headers, **kw))
 
+    def close(self):
+        if not self._a.is_closed:
+            self._run(self._a.aclose())
+
 
 @pytest.fixture()
 def api(monkeypatch):
@@ -104,7 +108,7 @@ def api(monkeypatch):
 
     client = ApiClient()
     yield client, {"A": f"Bearer {raw_a}", "B": f"Bearer {raw_b}"}, captured
-    client._a.aclose()
+    client.close()
 
 
 def test_run_overview_gate_and_tenant_isolation(api):

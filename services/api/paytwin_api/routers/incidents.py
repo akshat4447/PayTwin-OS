@@ -20,7 +20,7 @@ from paytwin_api.models import (
 from paytwin_api.services import executor as executor_svc
 from paytwin_api.services import incident_service
 from paytwin_api.services.bus import publish_outbox
-from paytwin_api.services.policy import PolicyContext, evaluate, merge_rules
+from paytwin_api.services.policy import PolicyContext, active_rules, evaluate, merge_rules
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 
@@ -42,7 +42,8 @@ def list_incidents(p: Principal = Depends(current_principal),
         q = q.filter(Incident.state == state)
     rows = q.order_by(Incident.detected_at.desc()).limit(100).all()
     return [{"human_id": i.human_id, "title": i.title, "sev": i.sev,
-             "state": i.state, "rar_paise": i.rar_paise,
+             "state": i.state, "merchant_id": i.merchant_id,
+             "rar_paise": i.rar_paise,
              "rar_lo_paise": i.rar_lo_paise, "rar_hi_paise": i.rar_hi_paise,
              "affected_payments": i.affected_payments,
              "confidence": i.confidence,
@@ -110,6 +111,59 @@ def resolve_route(human_id: str, p: Principal = Depends(current_principal),
     return {"human_id": inc.human_id, "state": inc.state}
 
 
+@router.post("/{human_id}/approve")
+def approve_route(human_id: str, p: Principal = Depends(current_principal),
+                  db: Session = Depends(get_db)):
+    """Approve-and-execute the incident's pending VALIDATED execution."""
+    require_write(p)
+    inc = _get(db, p.organization_id, human_id)
+    if inc is None:
+        return err(404, "not_found", f"incident {human_id}")
+    ex = (db.query(ActionExecution)
+          .filter(ActionExecution.incident_id == inc.id,
+                  ActionExecution.state.in_(("VALIDATED", "APPROVED")))
+          .order_by(ActionExecution.created_at.desc()).first())
+    if ex is None:
+        return err(409, "nothing_to_approve",
+                   f"incident {human_id} has no execution awaiting approval")
+    actor = p.user_id or f"{p.role}@{p.key_prefix}"
+    try:
+        executor_svc.approve_and_execute(db, p, ex.id, actor)
+    except ValueError as e:
+        return err(409, "not_approvable", str(e))
+    publish_outbox(db, p.organization_id, "action",
+                   {"incident": inc.human_id, "human_id": ex.human_id,
+                    "state": ex.state})
+    db.commit()
+    return {"human_id": inc.human_id, "execution_id": ex.id,
+            "execution_human_id": ex.human_id, "state": ex.state}
+
+
+@router.post("/{human_id}/halt")
+def halt_route(human_id: str, p: Principal = Depends(current_principal),
+               db: Session = Depends(get_db)):
+    """Human takes the wheel: stop autopilot on this incident."""
+    require_write(p)
+    inc = _get(db, p.organization_id, human_id)
+    if inc is None:
+        return err(404, "not_found", f"incident {human_id}")
+    if inc.state == "RESOLVED":
+        return err(409, "already_resolved", f"incident {human_id} is resolved")
+    inc.state = "HALTED"
+    from paytwin_api.services import audit as audit_svc
+
+    audit_svc.append_audit(
+        db, p.organization_id, actor=p.user_id or p.role,
+        actor_role="human-operator", action_type="autopilot.halt",
+        object_type="incident", object_id=inc.human_id,
+        summary=f"Autopilot halted on {inc.human_id} by operator",
+        incident_id=inc.id)
+    publish_outbox(db, p.organization_id, "incident",
+                   {"incident": inc.human_id, "state": inc.state})
+    db.commit()
+    return {"human_id": inc.human_id, "state": inc.state}
+
+
 @router.get("/{human_id}")
 def detail(human_id: str, p: Principal = Depends(current_principal),
            db: Session = Depends(get_db)):
@@ -118,8 +172,11 @@ def detail(human_id: str, p: Principal = Depends(current_principal),
         return err(404, "not_found", f"incident {human_id}")
     merchant = (db.query(Merchant).filter(Merchant.id == inc.merchant_id)
                 .one_or_none())
-    rules = merge_rules((merchant.config or {}).get("policy_rules")
-                        if merchant else None)
+    if merchant is not None:
+        # Same enforcement source as the executor: live versioned policies.
+        rules, _policy_label = active_rules(db, inc.organization_id, merchant)
+    else:
+        rules = merge_rules(None)
     causes = [[
         " x ".join(f"{k}={v}" for k, v in {
             "issuer": r.edge_issuer, "method": r.edge_method,

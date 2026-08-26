@@ -13,7 +13,7 @@ from paytwin_api.models import (
     Policy,
     PolicyDecision,
 )
-from paytwin_api.services.policy import DEFAULT_RULES, merge_rules
+from paytwin_api.services.policy import DEFAULT_RULES, validate_rules
 
 router = APIRouter(prefix="/api/policies", tags=["policies"])
 
@@ -60,6 +60,9 @@ def create_policy(body: PolicyBody, p: Principal = Depends(current_principal),
     unknown = set(body.rules) - set(DEFAULT_RULES)
     if unknown:
         return err(422, "unknown_rule", f"unrecognized rule ids: {sorted(unknown)}")
+    bad = validate_rules(body.rules)
+    if bad:
+        return err(422, "invalid_rule", bad)
     row = Policy(organization_id=p.organization_id, merchant_id=body.merchant_id,
                  human_id=_next_human_id(db, p.organization_id), name=body.name,
                  version=1, status=body.status, rules=body.rules,
@@ -89,6 +92,9 @@ def patch_policy(human_id: str, body: PatchBody,
         unknown = set(body.rules) - set(DEFAULT_RULES)
         if unknown:
             return err(422, "unknown_rule", f"unrecognized rule ids: {sorted(unknown)}")
+        bad = validate_rules(body.rules)
+        if bad:
+            return err(422, "invalid_rule", bad)
     row = Policy(organization_id=latest.organization_id,
                  merchant_id=latest.merchant_id, human_id=latest.human_id,
                  name=latest.name, version=latest.version + 1,

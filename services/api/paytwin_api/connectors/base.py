@@ -39,7 +39,8 @@ class PaymentProviderConnector(Protocol):
     provider: str
 
     def verify_webhook(self, body: bytes, signature: str, secret: str) -> bool: ...
-    def normalize(self, payload: dict, organization_id: str, merchant_id: str) -> CanonicalEvent: ...
+    def normalize(self, payload: dict, organization_id: str, merchant_id: str,
+                  headers: dict | None = None) -> CanonicalEvent: ...
     def capabilities(self) -> Capabilities: ...
 
 
@@ -49,6 +50,17 @@ def hmac_ok(body: bytes, signature: str, secret: str, scheme: str = "sha256=") -
         return False
     digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(scheme + digest, signature)
+
+
+def pseudonymize_ref(ref: str | None, salt: str) -> str | None:
+    """Salted pseudonym for customer references (PRIVACY.md guarantee).
+
+    Deterministic per (salt, ref) so retry groups still correlate, but the raw
+    provider customer id never touches the ledger.
+    """
+    if not ref:
+        return None
+    return "c_" + hashlib.sha256(f"{salt}|{ref}".encode()).hexdigest()[:16]
 
 
 def _ext_event_id(payload: dict, *keys: str) -> str:

@@ -23,7 +23,7 @@ pip install -e packages/contracts -e services/sim -e services/ml -e services/api
 pip install pytest httpx
 
 # 2) run the test suite (sqlite; no services needed)
-make test                       # expect: NNN passed
+make test                       # expect: 182 passed
 
 # 3) full flagship demo — seeds world, ingests 3h of traffic with an injected
 #    HDFC×UPI outage, detects, decides, executes, measures, writes DEMO_RUN.md
@@ -69,7 +69,8 @@ make worker     # detection sweep + policy-gated autopilot + outbox dispatch (30
 Copy `.env.example` → `.env`. Key variables: `PAYTWIN_DATABASE_URL`,
 `PAYTWIN_REDIS_URL`, `PAYTWIN_SECRET_KEY`, `PAYTWIN_WEBHOOK_SECRET_{SIMULATOR,
 MOCKPROVIDER,RAZORPAY}`, `PAYTWIN_LLM_PROVIDER=none|openai|anthropic`,
-`PAYTWIN_WORKER_INTERVAL`.
+`PAYTWIN_WORKER_INTERVAL`, `PAYTWIN_RATE_LIMIT_PER_MIN` (API 429 throttle;
+default 240 req/min on `/api/*`).
 
 ## Reliability Lab (native module)
 

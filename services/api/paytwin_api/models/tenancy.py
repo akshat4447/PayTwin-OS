@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, JSON
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from paytwin_api.db import Base
@@ -31,7 +31,8 @@ class Merchant(Base):
     __tablename__ = "merchants"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("mer"))
-    organization_id: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(120))
     short_code: Mapped[str] = mapped_column(String(4))
     color: Mapped[str] = mapped_column(String(16), default="#6d7dff")
@@ -49,7 +50,8 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("usr"))
-    organization_id: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True, nullable=False)
     email: Mapped[str] = mapped_column(String(200), unique=True)
     name: Mapped[str] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(30), default="ops_oncall")
@@ -60,7 +62,8 @@ class ApiKey(Base):
     __tablename__ = "api_keys"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("key"))
-    organization_id: Mapped[str] = mapped_column(String(40), index=True, nullable=False)
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True, nullable=False)
     user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     key_prefix: Mapped[str] = mapped_column(String(12), index=True)  # shown in UI
     key_hash: Mapped[str] = mapped_column(String(64), unique=True)   # sha256 hex

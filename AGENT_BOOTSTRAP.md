@@ -35,7 +35,7 @@ UI: pgReliability() + #reliability-app-js; Commander answers release-gate questi
 2. Never mark complete without a passing test/browser proof.
 3. Never expose secrets to frontend/logs/LLM.
 4. No real-money or third-party-production testing.
-5. Existing PayTwin behavior must keep passing (156+ suite).
+5. Existing PayTwin behavior must keep passing (182-test suite).
 
 ## SOURCE-OF-TRUTH ORDER
 official razorpay.com docs → docs/razorpay/sources → registries in

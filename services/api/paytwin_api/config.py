@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     webhook_secret_simulator: str = "sim-secret-dev"
     webhook_secret_mockprovider: str = "mock-secret-dev"
     webhook_secret_razorpay: str = "rzp-secret-dev"
+    hash_salt: str = "dev-hash-salt"  # salt for customer_ref pseudonymization
 
     llm_provider: str = "none"  # none | openai | anthropic
     llm_api_key: str = ""
@@ -32,6 +33,10 @@ class Settings(BaseSettings):
     worker_poll_seconds: float = 0.5
     sse_interval_seconds: float = 2.0
 
+    # Real-PSP execution is sandbox/demo-only until a provider integration is
+    # certified; flip explicitly per-environment (never in production).
+    allow_real_execution: bool = False
+
     @property
     def is_sqlite(self) -> bool:
         return self.database_url.startswith("sqlite")
@@ -40,7 +45,33 @@ class Settings(BaseSettings):
     def is_prod(self) -> bool:
         return self.env == "production"
 
+    _DEV_SECRET_DEFAULTS = {
+        "dev-secret-change-me", "sim-secret-dev", "mock-secret-dev",
+        "rzp-secret-dev", "dev-hash-salt",
+    }
+
+    def validate_for_env(self) -> None:
+        """Fail fast on unsafe production configuration (startup gate)."""
+        if not self.is_prod:
+            return
+        problems: list[str] = []
+        if self.is_sqlite:
+            problems.append("sqlite database_url is not a production datastore")
+        if self.secret_key in self._DEV_SECRET_DEFAULTS or len(self.secret_key) < 32:
+            problems.append("secret_key is a known default or too short (<32 chars)")
+        for name in ("webhook_secret_simulator", "webhook_secret_mockprovider",
+                     "webhook_secret_razorpay", "hash_salt"):
+            if getattr(self, name) in self._DEV_SECRET_DEFAULTS:
+                problems.append(f"{name} is still a development default")
+        if self.allow_real_execution:
+            problems.append("allow_real_execution must be false in production "
+                            "(real PSP execution is sandbox-only)")
+        if problems:
+            raise RuntimeError(
+                "PAYTWIN production configuration invalid: " + "; ".join(problems))
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+

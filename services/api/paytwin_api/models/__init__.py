@@ -21,6 +21,7 @@ from paytwin_api.models.actions import (  # noqa: F401
     PolicyDecision,
 )
 from paytwin_api.models.measure import (  # noqa: F401
+    AuditHead,
     AuditRecord,
     Experiment,
     ExperimentAssignment,

@@ -74,6 +74,13 @@ class TestMockProviderDialect:
         assert e.type == "payment.failed"
         assert e.amount_paise == 129900  # float rupees → integer paise
         assert e.cohort["issuer"] == "HDFC"
+        # privacy guarantee is dialect-independent (PRIVACY.md): raw buyer_ref
+        # never reaches the ledger payload
+        from paytwin_api.config import get_settings
+        from paytwin_api.connectors.base import pseudonymize_ref
+
+        assert e.payload["customer_ref"] == pseudonymize_ref(
+            "c_1", get_settings().hash_salt)
 
 
 class TestProviderAgnosticCore:

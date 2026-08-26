@@ -38,6 +38,12 @@ def promote(model_id: str, body: PromoteBody,
     require_admin(p)
     if body.stage not in ALLOWED_STAGES:
         return err(422, "bad_stage", f"stage must be one of {ALLOWED_STAGES}")
+    # model_versions is a GLOBALLY shared registry (no tenant column) — champion
+    # promotion changes runtime behavior for every tenant, so it is a platform
+    # operation: org_admin only. risk_admin stays tenant-scoped.
+    if body.stage == "CHAMPION" and p.role != "org_admin":
+        return err(403, "forbidden_role",
+                   "CHAMPION promotion is a platform operation (org_admin only)")
     m = db.query(ModelVersion).filter(ModelVersion.id == model_id).one_or_none()
     if m is None:
         return err(404, "not_found", f"model {model_id}")
@@ -50,6 +56,14 @@ def promote(model_id: str, body: PromoteBody,
     from datetime import datetime, timezone
 
     m.promoted_at = datetime.now(timezone.utc)
+    from paytwin_api.services import audit as audit_svc
+
+    audit_svc.append_audit(
+        db, p.organization_id, actor=p.user_id or f"{p.role}@{p.key_prefix}",
+        actor_role=p.role, action_type="model.promoted", object_type="model_version",
+        object_id=f"{m.name}:{m.version}",
+        summary=f"{m.name} {m.version} → {m.stage}",
+        details={"stage": m.stage, "kind": m.kind})
     publish_outbox(db, p.organization_id, "model_promoted",
                    {"model": m.name, "version": m.version, "stage": m.stage})
     db.commit()

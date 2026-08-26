@@ -29,7 +29,7 @@ from paytwin_api.models import (
 )
 from paytwin_api.services import audit as audit_svc
 from paytwin_api.services.experiments import results as experiment_results
-from paytwin_api.services.policy import PolicyContext, evaluate, merge_rules
+from paytwin_api.services.policy import PolicyContext, active_rules, evaluate, merge_rules
 
 _REFUSALS = [
     (r"ignore (all |any |your )?(previous|prior|above) instructions", "instruction override"),
@@ -247,7 +247,7 @@ def _draft_and_evaluate(db: Session, org_id: str, intent: dict,
                 f"request from. [{eid}]\n"
                 "No customer or payment action was executed.", {"decision": "none"})
     merchant = _merchant(db, org_id)
-    rules = merge_rules((merchant.config or {}).get("policy_rules"))
+    rules, _policy_label = active_rules(db, org_id, merchant)
     ctx = PolicyContext(
         merchant_id=merchant.id, autonomy_mode=merchant.autonomy_mode,
         action_kind=cand.kind, amount_paise=candidate_amount(cand),
