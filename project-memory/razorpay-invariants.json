@@ -1,0 +1,37 @@
+[
+  {
+    "invariant_id": "PTWIN-INV-001",
+    "statement": "No fulfilment without a CAPTURED payment.",
+    "source": "PAYTWIN_INVARIANT"
+  },
+  {
+    "invariant_id": "PTWIN-INV-002",
+    "statement": "One business effect per unique event id (duplicates collapse).",
+    "source": "PAYTWIN_INVARIANT"
+  },
+  {
+    "invariant_id": "PTWIN-INV-003",
+    "statement": "Invalid-signature events are rejected with zero side-effects.",
+    "source": "PAYTWIN_INVARIANT"
+  },
+  {
+    "invariant_id": "PTWIN-INV-004",
+    "statement": "Total refunded amount never exceeds captured amount.",
+    "source": "PAYTWIN_INVARIANT"
+  },
+  {
+    "invariant_id": "PTWIN-INV-005",
+    "statement": "Events scoped to tenant A never mutate tenant B.",
+    "source": "PAYTWIN_INVARIANT"
+  },
+  {
+    "invariant_id": "PTWIN-INV-006",
+    "statement": "Out-of-order arrivals converge to the correct final state.",
+    "source": "PAYTWIN_INVARIANT"
+  },
+  {
+    "invariant_id": "PTWIN-INV-007",
+    "statement": "Single-use agent mandate executes at most one purchase.",
+    "source": "PAYTWIN_INVARIANT"
+  }
+]

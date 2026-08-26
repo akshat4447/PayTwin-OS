@@ -305,7 +305,132 @@
       "tests": [
         "pytest full run"
       ]
+    },
+    {
+      "id": "REL-001",
+      "name": "Razorpay doc enumeration + hashed registry",
+      "status": "complete",
+      "dependencies": [],
+      "files": [
+        "docs/razorpay/*",
+        "project-memory/razorpay-doc-registry.json"
+      ],
+      "tests": [
+        "tests/test_reliability.py"
+      ],
+      "evidence": "7 sources, CORE/EXT/OOS classified; pytest tests/test_reliability.py 9/9 + live API 200s + headless DOM",
+      "documentation": "docs/RELIABILITY_LAB_ARCHITECTURE.md",
+      "checkpoint": "2026-08-26"
+    },
+    {
+      "id": "REL-002",
+      "name": "Requirement + traceability registries",
+      "status": "complete",
+      "dependencies": [],
+      "files": [
+        "razorpay-requirements.jsonl",
+        "razorpay-traceability.json"
+      ],
+      "tests": [
+        "tests/test_reliability.py"
+      ],
+      "evidence": "14 requirements OFFICIAL_DOC; pytest tests/test_reliability.py 9/9 + live API 200s + headless DOM",
+      "documentation": "docs/RELIABILITY_LAB_ARCHITECTURE.md",
+      "checkpoint": "2026-08-26"
+    },
+    {
+      "id": "REL-003",
+      "name": "Scenario engine + fixture policies + invariants",
+      "status": "complete",
+      "dependencies": [],
+      "files": [
+        "reliability/engine.py",
+        "fixtures.py",
+        "invariants.py"
+      ],
+      "tests": [
+        "tests/test_reliability.py"
+      ],
+      "evidence": "correct clean; every mutation detected; pytest tests/test_reliability.py 9/9 + live API 200s + headless DOM",
+      "documentation": "docs/RELIABILITY_LAB_ARCHITECTURE.md",
+      "checkpoint": "2026-08-26"
+    },
+    {
+      "id": "REL-004",
+      "name": "Generic webhook pack",
+      "status": "complete",
+      "dependencies": [],
+      "files": [
+        "reliability/packs.py"
+      ],
+      "tests": [
+        "tests/test_reliability.py"
+      ],
+      "evidence": "dup/badsig detected; pytest tests/test_reliability.py 9/9 + live API 200s + headless DOM",
+      "documentation": "docs/RELIABILITY_LAB_ARCHITECTURE.md",
+      "checkpoint": "2026-08-26"
+    },
+    {
+      "id": "REL-005",
+      "name": "Razorpay core pack",
+      "status": "complete",
+      "dependencies": [],
+      "files": [
+        "reliability/packs.py"
+      ],
+      "tests": [
+        "tests/test_reliability.py"
+      ],
+      "evidence": "dup/forged/late-auth/refund-cap traced to RZPREQ-*; pytest tests/test_reliability.py 9/9 + live API 200s + headless DOM",
+      "documentation": "docs/RELIABILITY_LAB_ARCHITECTURE.md",
+      "checkpoint": "2026-08-26"
+    },
+    {
+      "id": "REL-006",
+      "name": "Isolation + agentic packs",
+      "status": "complete",
+      "dependencies": [],
+      "files": [
+        "reliability/packs.py"
+      ],
+      "tests": [
+        "tests/test_reliability.py"
+      ],
+      "evidence": "tenant leak + mandate replay detected; pytest tests/test_reliability.py 9/9 + live API 200s + headless DOM",
+      "documentation": "docs/RELIABILITY_LAB_ARCHITECTURE.md",
+      "checkpoint": "2026-08-26"
+    },
+    {
+      "id": "REL-007",
+      "name": "REST API + release gate",
+      "status": "complete",
+      "dependencies": [],
+      "files": [
+        "reliability/router.py",
+        "main.py"
+      ],
+      "tests": [
+        "tests/test_reliability.py"
+      ],
+      "evidence": "READY/BLOCKED verified; tenant-scoped; pytest tests/test_reliability.py 9/9 + live API 200s + headless DOM",
+      "documentation": "docs/RELIABILITY_LAB_ARCHITECTURE.md",
+      "checkpoint": "2026-08-26"
+    },
+    {
+      "id": "REL-008",
+      "name": "UI page + Commander grounding",
+      "status": "complete",
+      "dependencies": [],
+      "files": [
+        "apps/web/index.html"
+      ],
+      "tests": [
+        "tests/test_reliability.py"
+      ],
+      "evidence": "#reliability hydrated; gate answers grounded; pytest tests/test_reliability.py 9/9 + live API 200s + headless DOM",
+      "documentation": "docs/RELIABILITY_LAB_ARCHITECTURE.md",
+      "checkpoint": "2026-08-26"
     }
   ],
-  "note": "2026-08-25 master completion audit: ALL tasks complete with executable evidence (156 pytest green in two venvs; demo persists artifacts across reconnect; clean worlds open zero incidents; sqlite+postgres migrations verified; loadtest+evaluate measured). Detection gates recalibrated \u2014 see docs/CURRENT_STATE.md final matrix."
+  "note": "2026-08-26: Reliability Lab v1 complete (9 new tests; total suite green). 2026-08-25 master completion audit: ALL tasks complete with executable evidence (156 pytest green in two venvs; demo persists artifacts across reconnect; clean worlds open zero incidents; sqlite+postgres migrations verified; loadtest+evaluate measured). Detection gates recalibrated \u2014 see docs/CURRENT_STATE.md final matrix."
 }

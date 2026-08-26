@@ -188,7 +188,7 @@ def test_clean_world_opens_no_incidents(tmp_path, monkeypatch):
 
     from paytwin_api.config import get_settings
     from paytwin_api.services.ingest import ingest_webhook
-    from paytwin_sim.demo import MERCHANT_SPECS, seed_world
+    from paytwin_sim.demo import DEMO_START, MERCHANT_SPECS, seed_world
     from paytwin_sim.generator import generate, to_webhook_payloads
 
     f = tmp_path / "clean.db"
@@ -197,7 +197,7 @@ def test_clean_world_opens_no_incidents(tmp_path, monkeypatch):
     s = factory()
     seed_world(s)
     secret = get_settings().webhook_secret_simulator
-    start = datetime.now(tz.utc) - timedelta(hours=1.5)
+    start = DEMO_START - timedelta(hours=1.5)
     for mid, _n, _s2, _c, _i, _m, _st, scale, h in MERCHANT_SPECS:
         res = generate(mid, hours=h, seed=42, start=start, scenarios=None,
                        tpm_scale=scale)

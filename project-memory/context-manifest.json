@@ -1,0 +1,26 @@
+{
+  "updated": "2026-08-26",
+  "must_read_on_resume": [
+    "AGENT_BOOTSTRAP.md",
+    "docs/CURRENT_STATE.md",
+    "docs/DECISIONS.md",
+    "docs/RELIABILITY_LAB_ARCHITECTURE.md",
+    "docs/UI_REDESIGN_STATUS.md"
+  ],
+  "provider_spec_registries": [
+    "project-memory/razorpay-doc-registry.json",
+    "project-memory/razorpay-requirements.jsonl",
+    "project-memory/razorpay-traceability.json",
+    "project-memory/razorpay-invariants.json",
+    "docs/razorpay/DOC_INVENTORY.md"
+  ],
+  "execution_state": [
+    "project-memory/task-graph.json",
+    "project-memory/implementation-state.json"
+  ],
+  "evidence_stores": [
+    "data/reliability/runs.json",
+    "docs/ui-shots/before/",
+    "docs/ui-shots/after/"
+  ]
+}

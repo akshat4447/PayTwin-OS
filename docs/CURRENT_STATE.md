@@ -1,10 +1,31 @@
 # CURRENT STATE
 
-> **STATUS: COMPLETE — master completion audit passed 2026-08-25.**
-> Every claim below carries executable evidence per the Completion Evidence Rule.
-> Re-run anything via the probes at the bottom; docs/EVALUATION.md holds the numbers.
+> **RELIABILITY LAB v1 SHIPPED (2026-08-26)** — native PayTwin module for payment
+> integration assurance. See RELIABILITY LAB section below; the 2026-08-25 UI/audit
+> matrix further down remains accurate.
 
-## FINAL COMPLETION MATRIX
+## RELIABILITY LAB
+
+- **Research:** 9 official razorpay.com pages fetched & quoted; 7 hashed extracts in
+  `docs/razorpay/sources/`; inventory classified CORE/EXTENDED/OUT-OF-SCOPE
+  (`docs/razorpay/DOC_INVENTORY.md`). NEEDS_REVALIDATION items listed there.
+- **Registries:** `project-memory/razorpay-doc-registry.json` (sha256+dates),
+  `razorpay-requirements.jsonl` (14 requirements), `razorpay-traceability.json`,
+  `razorpay-invariants.json` (7 PayTwin safety invariants).
+- **Engine:** deterministic scenario runner (`reliability/engine.py`) driving modeled
+  provider events through merchant fixture policies; 7 executable business invariants;
+  dual-path admission calibrated against clean-vs-planted sweeps (see constants).
+- **Suites:** generic/webhooks · razorpay/core · paytwin/isolation · paytwin/agentic —
+  every Razorpay scenario traced to requirement ids; mutations prove detection.
+- **API:** /api/reliability/{overview,suites,run,runs,runs/{id},findings,
+  release-gate,webhook-lab/{fault}} — bearer auth, tenant-scoped.
+- **UI:** `#reliability` page (gate banner, KPIs, suites table, findings, webhook lab,
+  spec-registry card) using the Apple design system; Commander answers release-gate
+  questions from live state.
+- **Tests:** tests/test_reliability.py — 9 passing (engine determinism, mutation
+  detection ≥6, unsigned-zero-effects, API surface, tenant isolation, BLOCKED gate).
+
+## FINAL COMPLETION MATRIX (2026-08-25 audit)
 
 | AREA | REQUIREMENT | STATUS | EVIDENCE |
 |---|---|---|---|

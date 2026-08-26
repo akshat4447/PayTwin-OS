@@ -71,6 +71,13 @@ Copy `.env.example` → `.env`. Key variables: `PAYTWIN_DATABASE_URL`,
 MOCKPROVIDER,RAZORPAY}`, `PAYTWIN_LLM_PROVIDER=none|openai|anthropic`,
 `PAYTWIN_WORKER_INTERVAL`.
 
+## Reliability Lab (native module)
+
+Prove payment integrations behave correctly under real lifecycle failures before
+production — duplicates, forged callbacks, out-of-order events, refund overruns,
+agent-mandate replays — traced to verified Razorpay requirements. Open the
+**Reliability Lab** page in the sidebar, then press **Run verification**.
+
 ## Operations
 
 - `make migrate` · `make seed` · `make demo` · `make verify` (audit chain)

@@ -1,0 +1,318 @@
+[
+  {
+    "run_id": "REL-2ae02561",
+    "at": "2026-08-26T03:01:53.478119+00:00",
+    "org_id": "org1",
+    "mode": "test",
+    "seed": 20260825,
+    "per_suite": [
+      {
+        "suite_id": "generic/webhooks",
+        "passed": true,
+        "checks": 4,
+        "findings": 0
+      },
+      {
+        "suite_id": "razorpay/core",
+        "passed": true,
+        "checks": 9,
+        "findings": 0
+      },
+      {
+        "suite_id": "paytwin/isolation",
+        "passed": true,
+        "checks": 2,
+        "findings": 0
+      },
+      {
+        "suite_id": "paytwin/agentic",
+        "passed": true,
+        "checks": 2,
+        "findings": 0
+      }
+    ],
+    "checks": [
+      {
+        "scenario": "GEN-WH-DUP",
+        "fixture": "correct",
+        "passed": true,
+        "expected": [],
+        "violations": {},
+        "evidence": {
+          "events": 2,
+          "processed": 2,
+          "effects": 1,
+          "notes": [
+            "ignored: duplicate delivery"
+          ]
+        }
+      },
+      {
+        "scenario": "GEN-WH-DUP",
+        "fixture": "no_dedupe",
+        "passed": true,
+        "expected": [
+          "PTWIN-INV-002"
+        ],
+        "violations": {
+          "PTWIN-INV-002": "duplicate business effects from events {'e1': 2}"
+        },
+        "evidence": {
+          "events": 2,
+          "processed": 2,
+          "effects": 2,
+          "notes": []
+        }
+      },
+      {
+        "scenario": "GEN-WH-BADSIG",
+        "fixture": "correct",
+        "passed": true,
+        "expected": [],
+        "violations": {},
+        "evidence": {
+          "events": 1,
+          "processed": 1,
+          "effects": 0,
+          "notes": [
+            "rejected: bad signature"
+          ]
+        }
+      },
+      {
+        "scenario": "GEN-WH-BADSIG",
+        "fixture": "forged_callback",
+        "passed": true,
+        "expected": [
+          "PTWIN-INV-001",
+          "PTWIN-INV-003"
+        ],
+        "violations": {
+          "PTWIN-INV-001": "fulfilment for pay_1 while status=created",
+          "PTWIN-INV-003": "unsigned events produced effects/acceptance: [{'kind': 'fulfilment', 'payment_id': 'pay_1', 'order_id': 'order_1', 'tenant': 't1', 'amount': 50000, 'src_event_id': 'e2'}]"
+        },
+        "evidence": {
+          "events": 1,
+          "processed": 1,
+          "effects": 1,
+          "notes": []
+        }
+      },
+      {
+        "scenario": "RZP-WH-DUP-DELIVERY",
+        "fixture": "correct",
+        "passed": true,
+        "expected": [],
+        "violations": {},
+        "evidence": {
+          "events": 2,
+          "processed": 2,
+          "effects": 1,
+          "notes": [
+            "ignored: duplicate delivery"
+          ]
+        }
+      },
+      {
+        "scenario": "RZP-WH-DUP-DELIVERY",
+        "fixture": "no_dedupe",
+        "passed": true,
+        "expected": [
+          "PTWIN-INV-002"
+        ],
+        "violations": {
+          "PTWIN-INV-002": "duplicate business effects from events {'rz1': 2}"
+        },
+        "evidence": {
+          "events": 2,
+          "processed": 2,
+          "effects": 2,
+          "notes": []
+        }
+      },
+      {
+        "scenario": "RZP-WH-FORGED",
+        "fixture": "correct",
+        "passed": true,
+        "expected": [],
+        "violations": {},
+        "evidence": {
+          "events": 1,
+          "processed": 1,
+          "effects": 0,
+          "notes": [
+            "rejected: bad signature"
+          ]
+        }
+      },
+      {
+        "scenario": "RZP-WH-FORGED",
+        "fixture": "no_verify",
+        "passed": true,
+        "expected": [
+          "PTWIN-INV-003"
+        ],
+        "violations": {
+          "PTWIN-INV-003": "unsigned events produced effects/acceptance: [{'kind': 'fulfilment', 'payment_id': 'pay_1', 'order_id': 'order_1', 'tenant': 't1', 'amount': 64000, 'src_event_id': 'rz2'}]"
+        },
+        "evidence": {
+          "events": 1,
+          "processed": 1,
+          "effects": 1,
+          "notes": []
+        }
+      },
+      {
+        "scenario": "RZP-LATE-AUTH",
+        "fixture": "correct",
+        "passed": true,
+        "expected": [],
+        "violations": {},
+        "evidence": {
+          "events": 3,
+          "processed": 3,
+          "effects": 0,
+          "notes": [
+            "ignored: duplicate delivery"
+          ]
+        }
+      },
+      {
+        "scenario": "RZP-LATE-AUTH",
+        "fixture": "fulfil_on_authorized",
+        "passed": true,
+        "expected": [
+          "PTWIN-INV-001"
+        ],
+        "violations": {
+          "PTWIN-INV-001": "fulfilment for pay_1 while status=authorized"
+        },
+        "evidence": {
+          "events": 3,
+          "processed": 3,
+          "effects": 1,
+          "notes": [
+            "ignored: duplicate delivery"
+          ]
+        }
+      },
+      {
+        "scenario": "RZP-REFUND-CAP",
+        "fixture": "correct",
+        "passed": true,
+        "expected": [],
+        "violations": {},
+        "evidence": {
+          "events": 2,
+          "processed": 2,
+          "effects": 1,
+          "notes": [
+            "rejected: refund exceeds captured"
+          ]
+        }
+      },
+      {
+        "scenario": "RZP-REFUND-CAP",
+        "fixture": "refund_over_capture",
+        "passed": true,
+        "expected": [
+          "PTWIN-INV-004"
+        ],
+        "violations": {
+          "PTWIN-INV-004": "refunded 120000 > captured 50000 for pay_1"
+        },
+        "evidence": {
+          "events": 2,
+          "processed": 2,
+          "effects": 2,
+          "notes": []
+        }
+      },
+      {
+        "scenario": "RZP-WH-REORDER",
+        "fixture": "correct",
+        "passed": true,
+        "expected": [],
+        "violations": {},
+        "evidence": {
+          "events": 3,
+          "processed": 3,
+          "effects": 1,
+          "notes": []
+        }
+      },
+      {
+        "scenario": "ISO-TENANT-B",
+        "fixture": "correct",
+        "passed": true,
+        "expected": [],
+        "violations": {},
+        "evidence": {
+          "events": 1,
+          "processed": 1,
+          "effects": 0,
+          "notes": [
+            "dropped: foreign tenant"
+          ]
+        }
+      },
+      {
+        "scenario": "ISO-TENANT-B",
+        "fixture": "cross_tenant_blind",
+        "passed": true,
+        "expected": [
+          "PTWIN-INV-005"
+        ],
+        "violations": {
+          "PTWIN-INV-005": "tenant leakage: [{'kind': 'fulfilment', 'payment_id': 'pay_1', 'order_id': 'order_1', 'tenant': 'tB', 'amount': 10000, 'src_event_id': 't9'}]"
+        },
+        "evidence": {
+          "events": 1,
+          "processed": 1,
+          "effects": 1,
+          "notes": []
+        }
+      },
+      {
+        "scenario": "AGT-REPLAY",
+        "fixture": "correct",
+        "passed": true,
+        "expected": [],
+        "violations": {},
+        "evidence": {
+          "events": 2,
+          "processed": 2,
+          "effects": 1,
+          "notes": [
+            "rejected: single-use mandate replay"
+          ]
+        }
+      },
+      {
+        "scenario": "AGT-REPLAY",
+        "fixture": "mandate_limits_off",
+        "passed": true,
+        "expected": [
+          "PTWIN-INV-007"
+        ],
+        "violations": {
+          "PTWIN-INV-007": "single-use mandate produced 2 purchases"
+        },
+        "evidence": {
+          "events": 2,
+          "processed": 2,
+          "effects": 2,
+          "notes": []
+        }
+      }
+    ],
+    "findings": [],
+    "gate": {
+      "verdict": "READY",
+      "score": 100,
+      "critical": 0,
+      "high": 0,
+      "medium": 0
+    }
+  }
+]

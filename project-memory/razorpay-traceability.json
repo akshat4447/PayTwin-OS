@@ -1,0 +1,107 @@
+{
+  "updated": "2026-08-26",
+  "chain": "document -> requirement -> capability -> scenario -> test -> evidence",
+  "requirements": [
+    {
+      "requirement_id": "RZPREQ-WEBHOOK-001",
+      "source_id": "RZPDOC-WEBHOOKS-002",
+      "capability": [
+        "webhook-receiver"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-WEBHOOK-002",
+      "source_id": "RZPDOC-WEBHOOKS-002",
+      "capability": [
+        "webhook-receiver"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-WEBHOOK-003",
+      "source_id": "RZPDOC-WEBHOOKS-002",
+      "capability": [
+        "webhook-receiver",
+        "payment-state-machine"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-WEBHOOK-004",
+      "source_id": "RZPDOC-WEBHOOKS-002",
+      "capability": [
+        "webhook-receiver"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-WEBHOOK-005",
+      "source_id": "RZPDOC-WEBHOOKS-002",
+      "capability": [
+        "webhook-receiver"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-WEBHOOK-006",
+      "source_id": "RZPDOC-WEBHOOKS-001",
+      "capability": [
+        "webhook-receiver"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-PAYMENTS-001",
+      "source_id": "RZPDOC-PAYMENTS-001",
+      "capability": [
+        "payment-state-machine",
+        "executor"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-REFUNDS-001",
+      "source_id": "RZPDOC-REFUNDS-001",
+      "capability": [
+        "refund-flow"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-REFUNDS-002",
+      "source_id": "RZPDOC-REFUNDS-001",
+      "capability": [
+        "payment-state-machine"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-REFUNDS-003",
+      "source_id": "RZPDOC-REFUNDS-001",
+      "capability": [
+        "refund-flow"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-LATEAUTH-001",
+      "source_id": "RZPDOC-WEBHOOKS-001",
+      "capability": [
+        "payment-state-machine",
+        "webhook-receiver"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-SUBS-001",
+      "source_id": "RZPDOC-SUBSCRIPTIONS-001",
+      "capability": [
+        "subscription-model"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-SUBS-002",
+      "source_id": "RZPDOC-SUBSCRIPTIONS-001",
+      "capability": [
+        "subscription-model"
+      ]
+    },
+    {
+      "requirement_id": "RZPREQ-ERRORS-001",
+      "source_id": "RZPDOC-ERRORS-001",
+      "capability": [
+        "error-normalization"
+      ]
+    }
+  ]
+}

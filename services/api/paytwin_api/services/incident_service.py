@@ -32,11 +32,11 @@ PSPS = ("cashfree", "razorpay", "payu")
 # Severity-gate tuning (calibrated empirically on clean-vs-planted world sweeps,
 # seeds 42/7, see tests/test_finish_audit.py::test_clean_world_opens_no_incidents):
 SEVERITY_GUARD_MIN = 10   # minutes before firing excluded from the baseline region
-SEVERITY_ALPHA = 0.01     # per-cohort binomial-tail threshold (~40 cohorts watched)
+SEVERITY_ALPHA = 0.003    # persistence-path tail threshold (w2 confirmation uses 4x)
 SEVERITY_MIN_EXCESS = 3   # business floor: extra failures beyond expectation
-SEVERITY_MIN_DROP = 0.03  # business floor: window SR at least this far below baseline
-SEVERITY_MIN_N = 25       # verdict needs enough traffic for a meaningful tail
-                          # (thin cohorts turn 2-4 random fails into "p≈1e-7")
+SEVERITY_MIN_DROP = 0.03  # business floor: window SR below baseline (both paths)
+SEVERITY_MIN_N = 35       # minimum cohort traffic for any verdict (planted
+                          # cohorts run 39–54; noise clusters ≤32 observed)
 PERSIST_MIN_EXCESS = 2    # acceptance is DUAL-PATH on the NEXT 20-min window:
 PERSIST_MIN_N = 5         # (a) statistical persistence — binomial tail there
                           #     clears 4×SEVERITY_ALPHA with ≥3 fails, OR
@@ -231,20 +231,23 @@ def run_detection_cycle(db: Session, organization_id: str) -> list[Incident]:
                 continue
             excess, wsr, meta, p_tail, n_fails = sev
             if not (excess >= SEVERITY_MIN_EXCESS
-                    and wsr < meta[1] - SEVERITY_MIN_DROP
-                    and p_tail < SEVERITY_ALPHA):
+                    and wsr < meta[1] - SEVERITY_MIN_DROP):
                 continue
             rca_top = rank_root_causes(pays, meta[0], baseline_sr=meta[1],
                                        top_k=1)
             share = rca_top[0].counterfactual_share if rca_top else 0.0
-            sustained = _sustains(pays, dims, t0 + f1, meta[1])
-            # Overwhelm is reserved for SPECIFIC cohorts (≥2 dims): single-dim
-            # aggregates bundle many issuers/psps and are exactly where organic
-            # noise manufactures deceptively concentrated-looking evidence.
+            # Path A — statistical persistence: primary tail clears alpha AND
+            # the next window is independently elevated (tail < 4x alpha).
+            sustained = (p_tail < SEVERITY_ALPHA
+                         and _sustains(pays, dims, t0 + f1, meta[1]))
+            # Path B — overwhelming single-window evidence: heavy absolute
+            # losses, big drop, ONE root-cause edge explains most of it,
+            # specific (>=2 dims), with its own tail sanity cap.
             overwhelming = (len(dims) >= 2
                             and n_fails >= OVERWHELM_MIN_FAILS
                             and (meta[1] - wsr) >= OVERWHELM_MIN_DROP
-                            and share >= OVERWHELM_SHARE)
+                            and share >= OVERWHELM_SHARE
+                            and p_tail < 0.05)
             if sustained or overwhelming:
                 candidates.append((excess, len(dims), dims, det, meta))
         if not candidates:

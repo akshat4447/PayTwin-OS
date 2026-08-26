@@ -61,3 +61,27 @@ cohorts), with business floors (excess >= 3 failures, SR drop >= 3pts, n >= 10 i
 20-min window). Calibrated so the planted HDFC×upi_intent outage opens exactly one
 incident while clean traffic opens zero. Status: accepted.
 
+
+# Decision log additions — Reliability Lab (2026-08-26)
+
+D1. Reliability Lab lives inside services/api as a native module (no separate app):
+    it reuses auth, merchant context, connectors' semantics, audit conventions,
+    design system and navigation; a second product would fork all of them.
+D2. Generic core + provider packs: core speaks only in scenarios/invariants;
+    Razorpay specifics live behind suite definitions traced to requirement ids,
+    so Stripe/Cashfree packs can be added without touching the engine.
+D3. Provider specs are versioned artifacts: verbatim extracts + sha256 + dates in
+    docs/razorpay/sources; claims require OFFICIAL_DOC level or are labeled
+    PAYTWIN_INVARIANT / INFERRED / UNKNOWN. Model memory is never a source.
+D4. Run evidence is immutable JSON (data/reliability/runs.json), not SQL tables:
+    generated, append-only, queried rarely; avoids schema churn in v1.
+D5. The AI never executes tests or mutates specs; it explains gate/findings and
+    labels statements as Official requirement vs PayTwin invariant vs inference.
+D6. Release Gate: any critical finding forces BLOCKED regardless of score;
+    score is derived only from measured finding counts by severity.
+D7. Live-money and third-party production chaos testing are forbidden; testing
+    happens against modeled fixtures and existing sandbox injection routes.
+D8. Detection admission was recalibrated (alpha .003 persistence-path with w2
+    confirmation OR overwhelming single-window evidence incl. >=2 dims and
+    RCA-share >=75%) because alpha-only tuning could not separate organic
+    multi-cohort noise from planted outages at reduced volumes.

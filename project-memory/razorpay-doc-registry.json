@@ -1,0 +1,75 @@
+{
+  "updated": "2026-08-26",
+  "documents": [
+    {
+      "source_id": "RZPDOC-WEBHOOKS-001",
+      "title": "About Webhooks",
+      "category": "webhooks",
+      "official": true,
+      "source_location": "https://razorpay.com/docs/webhooks/",
+      "last_verified_at": "2026-08-26",
+      "content_hash": "sha256:b7196370eba567ca3222810cce0c51bc85fcb9b390db072c5bfc79657fc13679",
+      "status": "CURRENT"
+    },
+    {
+      "source_id": "RZPDOC-WEBHOOKS-002",
+      "title": "Webhooks Best Practices",
+      "category": "webhooks",
+      "official": true,
+      "source_location": "https://razorpay.com/docs/webhooks/best-practices/",
+      "last_verified_at": "2026-08-26",
+      "content_hash": "sha256:1b323080f4761f7df24b005d7fbb7bca81a21c5431f12aac421c9358b83341a5",
+      "status": "CURRENT"
+    },
+    {
+      "source_id": "RZPDOC-REFUNDS-001",
+      "title": "Refunds API",
+      "category": "refunds",
+      "official": true,
+      "source_location": "https://razorpay.com/docs/api/refunds/",
+      "last_verified_at": "2026-08-26",
+      "content_hash": "sha256:1a4d14410c403a3f52dc836172cdc137e5154d8f145e33bde1529d3f5ce778a5",
+      "status": "CURRENT"
+    },
+    {
+      "source_id": "RZPDOC-PAYMENTS-001",
+      "title": "Payments API",
+      "category": "payments",
+      "official": true,
+      "source_location": "https://razorpay.com/docs/api/payments/",
+      "last_verified_at": "2026-08-26",
+      "content_hash": "sha256:2f294ef70c9b21dc8ebf27fc4ca855ef686c528c0c16e8673a4c2a25e197ce18",
+      "status": "CURRENT"
+    },
+    {
+      "source_id": "RZPDOC-SUBSCRIPTIONS-001",
+      "title": "Subscription States",
+      "category": "subscriptions",
+      "official": true,
+      "source_location": "https://razorpay.com/docs/payments/subscriptions/states/",
+      "last_verified_at": "2026-08-26",
+      "content_hash": "sha256:2cedefb7b3e1b16fbb54cf5bf5e1c373cc57e7ad50678f7ae2bec1158b032cb4",
+      "status": "CURRENT"
+    },
+    {
+      "source_id": "RZPDOC-ERRORS-001",
+      "title": "About Errors",
+      "category": "errors",
+      "official": true,
+      "source_location": "https://razorpay.com/docs/errors/",
+      "last_verified_at": "2026-08-26",
+      "content_hash": "sha256:f5676ef10390b33dd28c2b18a6764acda995abc1702461d3b5337a9c955330c6",
+      "status": "CURRENT"
+    },
+    {
+      "source_id": "RZPDOC-ORDERS-001",
+      "title": "Orders APIs",
+      "category": "orders",
+      "official": true,
+      "source_location": "https://razorpay.com/docs/api/orders/",
+      "last_verified_at": "2026-08-26",
+      "content_hash": "sha256:8ce12204a3406c263b17605be9c56ff8c46701dd7f27c0bc64a2a89f310ef75c",
+      "status": "CURRENT"
+    }
+  ]
+}
