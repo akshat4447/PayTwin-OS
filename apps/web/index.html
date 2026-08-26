@@ -997,14 +997,17 @@ function ensureState(){if(!S.rel)S.rel={loaded:false,live:false,ov:null,
   suites:[],findings:[],running:false,lastFault:null}}
 function load(){
   ensureState();
+  console.log('RELDBG load enter · loaded='+S.rel.loaded+' loading='+S.rel.loading+' live='+S.rel.live+' key='+(!!key()));
   if(S.rel.loaded||S.rel.loading||!key())return;
   S.rel.loading=true;
+  console.log('RELDBG fetching…');
   Promise.all([api('/api/reliability/overview'),api('/api/reliability/suites'),
                api('/api/reliability/findings')])
    .then(function(rs){
+     console.log('RELDBG fetched · suites='+rs[1].suites.length);
      S.rel.ov=rs[0];S.rel.suites=rs[1].suites;S.rel.findings=rs[2].findings;
      S.rel.live=true;S.rel.loading=false;S.rel.loaded=true;render()})
-   .catch(function(){S.rel.loading=false;render()})}
+   .catch(function(e){console.log('RELDBG fetch FAIL: '+e);S.rel.loading=false;render()})}
 var _rlRender=window.render;
 window.render=function(){_rlRender();
   if(S.page==='reliability')setTimeout(load,0)};
