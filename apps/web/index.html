@@ -345,7 +345,11 @@ const INC=[
   cands:[{a:'Flag release owner',ev:2100,st:'proposed'},{a:'Nudge abandoned carts',ev:3400,st:''}],
   budget:{att:0,max:2,bud:0,bmax:8000,win:0,wmax:45}}];
 /* ================= STATE + LIVE ENGINE ================= */
-const S={page:'overview',theme:'dark',env:'production',scope:'org',inc:0,chaos:false,chat:[],simRun:null,paletteIdx:0,notifs:[],auditN:4098,prot:184000,rec:0};
+const S={page:'overview',theme:'dark',env:'demo',scope:'org',inc:0,chaos:false,chat:[],simRun:null,paletteIdx:0,notifs:[],auditN:4098,prot:184000,rec:0};
+/* The default experience is a seeded simulator demo. A connected API is always
+   presented as Test Mode: this UI never represents a production payment rail. */
+function demoModeLabel(){return window.__PTW_LIVE?(S.env==='simulation'?'TEST MODE · SIMULATION SANDBOX':'TEST MODE · API CONNECTED'):(S.env==='simulation'?'SIMULATION · SANDBOX':'DEMO · SIMULATED')}
+function telemetryModeLabel(){return window.__PTW_LIVE?'TEST API feed':'SIMULATED feed'}
 const series={};ORG.merchants.forEach(k=>{const r=mulberry(42+k.length);series[k]=Array.from({length:48},(_,i)=>MERCH[k].srBase+Math.sin(i/6)*.5+(r()-.5)*.8)});
 function scopeM(){return S.scope==='org'?null:MERCH[S.scope]}
 function scopeName(){return S.scope==='org'?ORG.name+' · All merchants':MERCH[S.scope].name}
@@ -453,9 +457,9 @@ function pgOverview(){const a=agg(),m=scopeM();const risk=totalRisk();
  const incs=activeInc();
  const opp=[['route','Reroute unhealthy UPI cohort','Bounded 18% · Razorpay rail',inr(29940),'EV-ranked',"openInc('INC-2481')"],['link','Links for 2-failure carts','WhatsApp · consent checked',inr(12600),'RP-009','toastOp()'],['flame','Shift tonight\u2019s debit cycle','Subscriptions · +3h window',inr(18400),'RP-021',"openInc('INC-2482')"]];
  return '<div class="pagegrid">'+
- '<div class="trow"><div><p class="eyebrow"><span class="dot" style="width:7px;height:7px;border-radius:50%;background:var(--grn);display:inline-block"></span> LIVE · synced <span data-live="sync">0</span>s ago</p>'+
+ '<div class="trow"><div><p class="eyebrow"><span class="dot" style="width:7px;height:7px;border-radius:50%;background:var(--grn);display:inline-block"></span> '+demoModeLabel()+' · synced <span data-live="sync">0</span>s ago</p>'+
  '<h1>'+(m?'Merchant view — '+esc(m.name):'Organization view — '+esc(ORG.name))+'</h1><p class="sub">'+(m?m.mode+' · baseline learned from this merchant\u2019s own history.':'Portfolio rollup across '+a.n+' merchants · every number below specializes per merchant.')+'</p></div>'+
- '<div class="toolbar"><button class="btn" data-act="how">How PayTwin thinks</button><button class="btn pr" data-act="nav" data-p="twinlab">'+ic('play',14)+' Run a simulation</button></div></div>'+
+ '<div class="toolbar"><button class="btn" data-act="nav" data-p="tour">Demo tour</button><button class="btn" data-act="how">How PayTwin thinks</button><button class="btn pr" data-act="nav" data-p="twinlab">'+ic('play',14)+' Run a simulation</button></div></div>'+
  '<div class="moneyhud"><span class="mh-ic">'+ic('alert',18)+'</span><div class="mh-main"><small>GMV at risk right now</small><div class="big num" data-live="risk">'+inr(risk)+'</div><span class="mh-sub">80% interval '+inr(risk*.82)+'–'+inr(risk*1.18)+' · updates every second</span></div>'+
  '<div class="mh-side"><small>active incidents</small><div class="mh-ninc num" data-live="ninc">'+incs.length+'</div></div></div>'+
  lvlStrip()+
@@ -467,23 +471,40 @@ function pgOverview(){const a=agg(),m=scopeM();const risk=totalRisk();
  '</div>'+
  '<div class="grid21"><div class="card"><div class="hd"><h2>Success rate vs expected band</h2><span style="display:flex;gap:12px;font-size:11px;color:var(--dim)"><span>\u25CF actual</span><span style="opacity:.7">\u25AC expected q10–q90</span></span></div>'+lineBand(data,600,180,alertIdx)+
  '<div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--dim);margin-top:4px"><span>-48 min</span><span>-24 min</span><span>now</span></div></div>'+
- '<div class="card"><div class="hd"><h2>Live event stream</h2><span class="pill grn">WS connected</span></div><div style="font-family:var(--mono);font-size:11px;color:var(--mut);line-height:2" data-live="stream">'+streamRows()+'</div></div></div>'+
+ '<div class="card"><div class="hd"><h2>'+telemetryModeLabel()+'</h2><span class="pill '+(window.__PTW_LIVE?'grn':'amb')+'">'+(window.__PTW_LIVE?'API connected':'simulator')+'</span></div><div style="font-family:var(--mono);font-size:11px;color:var(--mut);line-height:2" data-live="stream">'+streamRows()+'</div></div></div>'+
  '<div class="card"><div class="hd"><h2>Incident queue</h2><button class="lk" data-act="nav" data-p="warroom">Open war room \u2192</button></div><table class="tbl"><thead><tr><th>ID</th><th>Severity</th><th>Title</th><th>Cohort</th><th>Risk</th><th>State</th></tr></thead><tbody>'+
  INC.filter(i=>S.scope==='org'||i.merch===S.scope).map(i=>'<tr class="rw" data-act="openInc" data-id="'+i.id+'"><td class="mono">'+i.id+'</td><td><span class="pill '+(i.sev==='P1'?'red':i.sev==='P2'?'amb':'mut')+'">'+i.sev+'</span></td><td><b>'+esc(i.title)+'</b></td><td style="color:var(--mut);font-size:12px">'+esc(i.cohort)+'</td><td class="num">'+inr(i.risk)+'</td><td><span class="pill '+(i.state==='MITIGATING'?'amb':i.state==='DETECTED'?'red':'acc')+'">'+i.state+'</span></td></tr>').join('')+
  '</tbody></table></div>'+
  '<div class="grid3">'+opp.map(o=>'<div class="card"><div style="display:flex;gap:10px;align-items:flex-start"><span class="chip" style="padding:8px">'+ic(o[0],15)+'</span><div style="flex:1"><b style="font-size:13.5px">'+o[1]+'</b><p style="color:var(--mut);font-size:12px;margin:3px 0 8px">'+o[2]+'</p><div style="display:flex;align-items:center;gap:8px"><strong style="font-size:16px">'+o[3]+'</strong><span class="pill acc">'+o[4]+'</span></div></div></div><button class="lk" style="margin-top:10px" data-act="'+(o[5].startsWith('toastOp')?'toastOp':'openInc')+'">Review \u2192</button></div>').join('')+'</div></div>'}
+function pgTour(){const stages=[
+ ['Observe','Ingest a tenant-scoped stream, establish merchant baselines, and see the payment fabric by cohort.','cohort','Cohort health','pulse'],
+ ['Detect','Surface a deviation from the expected band before a generic error-rate alarm tells the whole story.','warroom','Open incident','alert'],
+ ['Diagnose','Bring together cohort evidence, ranked causes, financial impact, and an explainable War Room.','warroom','View RCA','filter'],
+ ['Simulate','Rehearse bounded recovery choices with a deterministic Digital Twin before any test action.','twinlab','Run Twin','twin'],
+ ['Govern','Apply typed merchant policies and human approval gates; policy—not an LLM—has final authority.','policies','Review policies','law'],
+ ['Assure','Run modeled lifecycle, webhook, and invariant checks in Reliability Lab before a release.','reliability','Open Reliability Lab','shield']];
+ return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('spark',13)+' HACKATHON DEMO TOUR</p><h1>From payment signal to safe action.</h1><p class="sub">A concise walkthrough of PayTwin\u2019s closed loop: observe, detect, diagnose, simulate, govern, and assure.</p></div><div class="toolbar"><span class="pill acc">Razorpay Test Mode</span><button class="btn pr" data-act="nav" data-p="overview">Start at command center</button></div></div>'+
+ '<div class="banner ok"><span class="ic">'+ic('shield',18)+'</span><div><b>Demo safety boundary.</b><p>Seeded simulator data and Razorpay Test Mode semantics only. No production PSP credentials, live money movement, or production release decision is represented here.</p></div></div>'+
+ '<div class="grid3">'+stages.map(s=>'<div class="card"><div class="hd"><span class="chip">'+ic(s[4],14)+' '+s[0]+'</span><button class="lk" data-act="nav" data-p="'+s[2]+'">'+s[3]+' \u2192</button></div><p style="color:var(--mut);font-size:12.5px;line-height:1.65">'+s[1]+'</p></div>').join('')+'</div>'+
+ '<div class="grid2"><div class="card"><div class="hd"><h2>Suggested demo path</h2><span class="pill mut">~3 minutes</span></div><div class="code">1. Cohort Matrix → observe the HDFC × UPI deviation\n2. War Room → review evidence and policy boundary\n3. Twin Lab → compare a bounded recovery option\n4. Reliability Lab → run the release assurance pack</div></div><div class="card"><div class="hd"><h2>Evidence vocabulary</h2></div><p style="color:var(--mut);font-size:12.5px;line-height:1.7">Demo charts are <b>SIMULATED</b>. Connected local API data is labeled <b>TEST MODE · API CONNECTED</b>. Provider requirements and PayTwin invariants remain visibly distinct in Reliability Lab.</p></div></div></div>'}
 function streamRows(){return STREAM.map(s=>'<div><span style="color:var(--dim)">'+s.t+'</span> <span class="chip">'+MERCH[s.m].short+'</span> '+esc(s.x)+'</div>').join('')||'<div style="color:var(--dim)">waiting for events\u2026</div>'}
 function metric(t,v,d,tone,bars){var up=d.startsWith('+')||d.startsWith('✓')||tone==='g';return '<div class="card metric"><div class="mlbl">'+t+'</div><strong class="num">'+v+'</strong><div class="mrow"><span class="delta '+(up?'good':'bad')+'">'+d+'</span><div class="bars '+(tone==='p'?'p':tone==='g'?'g':tone==='a'?'a':'')+'">'+bars.map(h=>'<i style="height:'+h+'%"></i>').join('')+'</div></div></div>'}
-function pgTwin(){S.alloc=S.alloc||18;S.dur=S.dur||18;S.scen=S.scen||'psp';
- const sc=[['psp','PSP degradation','collect path slows','route'],['issuer','Issuer outage','authorizations fail','flame'],['checkout','Checkout regression','bad release drops conversion','zap'],['mandate','Mandate failure','e-mandate window missed','law']];
+function pgTwin(){S.alloc=S.alloc||18;S.dur=S.dur||18;S.scen=S.scen||'reroute_psp';
+ /* The selected key is the exact supported Twin request, not a display-only
+    fault label. This makes the visual scenario and API request auditable. */
+ const sc=[['reroute_psp','PSP degradation','test action: reroute_psp','route'],['retry_burst','Issuer outage','test action: retry_burst','flame'],['payment_links','Checkout regression','test action: payment_links','zap'],['calendar_shift','Mandate failure','test action: calendar_shift','law']];
+ const pre=S.preflight,scope=S.scope==='org'?(ORG.merchants[0]||'mer1'):S.scope;
+ const preflight=pre?('<div class="card"><div class="hd"><h2>Pre-incident scenario forecast</h2><span class="pill amb">SIMULATED · BEFORE INJECTION</span></div><div class="grid3"><div><small style="color:var(--mut)">Scenario</small><br><b>'+esc(pre.scenario_label||pre.scenario)+'</b><p style="font-size:11.5px;color:var(--dim);margin-top:4px">'+(pre.forecast.traffic_multiplier||1)+'× traffic · '+pre.forecast.duration_min+' min</p></div><div><small style="color:var(--mut)">Projected revenue at risk</small><br><b class="num" style="font-size:18px;color:var(--amb)">'+inr((pre.forecast.revenue_at_risk_paise||0)/100)+'</b><p style="font-size:11.5px;color:var(--dim);margin-top:4px">range '+inr((pre.forecast.rar_lo_paise||0)/100)+'–'+inr((pre.forecast.rar_hi_paise||0)/100)+'</p></div><div><small style="color:var(--mut)">Best bounded response</small><br><b>'+esc(((pre.recommended_actions||[])[0]||{}).scenario||'—').replace(/_/g,' ')+'</b><p style="font-size:11.5px;color:var(--dim);margin-top:4px">'+esc(pre.decision_note||'')+'</p></div></div><div class="banner ok" style="margin-top:12px"><span class="ic">'+ic('shield',16)+'</span><div><b>Model boundary is visible.</b><p>'+esc((pre.risk_model||{}).limitation||'Sandbox estimate only.')+'</p></div><button class="btn sm" style="margin-left:auto" data-act="surgePreview" data-scope="'+scope+'">Refresh preview</button></div></div>'):
+ '<div class="banner ok"><span class="ic">'+ic('twin',18)+'</span><div><b>Rehearse a compound failure before it happens.</b><p>Preview a 4× flash-sale surge with a targeted bank failure. The forecast shows explicit assumptions, risk range, and bounded Twin responses before any synthetic event is injected.</p></div><div class="toolbar"><button class="btn" data-act="surgePreview" data-scope="'+scope+'">Preview 4× surge + bank failure</button><button class="btn pr" data-act="surgeInject" data-scope="'+scope+'">Inject after preview</button></div></div>';
  return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('twin',13)+' DIGITAL TWIN \u00b7 SAFE SANDBOX</p><h1>Simulation lab</h1><p class="sub">Rehearse recovery against a seeded, reproducible twin — results are distributions, not single numbers.</p></div><div class="toolbar">'+(S.env!=='simulation'?'<button class="btn" data-act="simMode">Enter simulation mode</button>':'')+'</div></div>'+
+ preflight+
  '<div class="grid21"><div class="card"><div class="hd"><h2>1 · Scenario</h2></div><div style="display:flex;flex-direction:column;gap:8px">'+
  sc.map(s=>'<button style="display:flex;gap:10px;align-items:center;text-align:left;border:1px solid '+(S.scen===s[0]?'var(--acc)':'var(--line)')+';border-radius:11px;padding:9px 12px" data-act="scen" data-k="'+s[0]+'">'+ic(s[3],15)+'<span style="flex:1"><b style="font-size:13px;color:var(--ink)">'+s[1]+'</b><small style="display:block;color:var(--dim);font-size:11px">'+s[2]+'</small></span>'+(S.scen===s[0]?'<span class="pill acc">selected</span>':'')+'</button>').join('')+'</div>'+
  '<label class="range" style="margin-top:14px"><span class="lb" style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--mut)">Traffic allocation <b class="num" id="allocV">'+S.alloc+'%</b></span><input type="range" min="5" max="40" value="'+S.alloc+'" data-input="alloc"></label>'+
  '<label class="range"><span class="lb" style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--mut)">Max duration <b class="num" id="durV">'+S.dur+' min</b></span><input type="range" min="5" max="45" value="'+S.dur+'" data-input="dur"></label>'+
  '<button class="btn pr" style="width:100%;justify-content:center;margin-top:6px" data-act="runSim">'+ic('play',15)+' Run 400-trial Monte Carlo</button></div>'+
  '<div class="card"><div class="hd"><h2>2 · Counterfactual forecast</h2>'+(S.simRun?'<span class="pill grn">complete</span>':'<span class="pill mut">not run</span>')+'</div>'+
- (S.simRun?'<div class="mono" style="font-size:11px;color:var(--mut);background:var(--bg2);border:1px dashed var(--line2);border-radius:10px;padding:8px 11px;margin-bottom:10px">seed='+S.simRun.seed+' \u00b7 trials=400 \u00b7 reproducible \u2713</div><div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px"><div><small style="color:var(--mut)">incremental p50</small><br><strong style="font-size:24px" class="num">'+inr(S.simRun.p50)+'</strong></div><div><small style="color:var(--mut)">80% interval</small><br><strong class="num">'+inr(S.simRun.lo)+'\u2013'+inr(S.simRun.hi)+'</strong></div><div><small style="color:var(--mut)">SR lift</small><br><strong class="num" style="color:var(--grn)">+'+S.simRun.lift.toFixed(1)+' pts</strong></div></div>'+lineBand(S.simRun.traj,520,150):'<div class="empty" style="padding:30px 10px">'+illShield()+'<p>Pick a scenario and run the twin.<br>Reality isn\u2019t a single number — neither is our answer.</p></div>')+'</div></div>'+
+ (S.simRun?'<div class="mono" style="font-size:11px;color:var(--mut);background:var(--bg2);border:1px dashed var(--line2);border-radius:10px;padding:8px 11px;margin-bottom:10px">scenario='+S.simRun.scenario+' \u00b7 seed='+S.simRun.seed+' \u00b7 trials=400 \u00b7 reproducible \u2713</div><div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px"><div><small style="color:var(--mut)">incremental p50</small><br><strong style="font-size:24px" class="num">'+inr(S.simRun.p50)+'</strong></div><div><small style="color:var(--mut)">80% interval</small><br><strong class="num">'+inr(S.simRun.lo)+'\u2013'+inr(S.simRun.hi)+'</strong></div><div><small style="color:var(--mut)">SR lift</small><br><strong class="num" style="color:var(--grn)">+'+S.simRun.lift.toFixed(1)+' pts</strong></div></div>'+lineBand(S.simRun.traj,520,150):'<div class="empty" style="padding:30px 10px">'+illShield()+'<p>Pick a scenario and run the twin.<br>Reality isn\u2019t a single number — neither is our answer.</p></div>')+'</div></div>'+
  '<div class="card"><div class="hd"><h2>Policy compare · EV per candidate</h2><span class="pill mut">constraints checked</span></div><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Candidate</th><th>p50 incremental</th><th>80% interval</th><th>Risk flags</th><th>Verdict</th></tr></thead><tbody>'+
  [['Bounded reroute 18%',29940,'24k\u201336k','rollback armed','grn','EXECUTE'],['Full reroute 65%',34100,'26k\u201341k','blast radius \u00d73.6','red','BLOCKED RP-014'],['Wait & observe',4100,'2k\u20137k','risk grows 8%/min','amb','REVIEW']].map(r=>'<tr><td><b>'+r[0]+'</b></td><td class="num">'+inr(r[1])+'</td><td class="num" style="color:var(--mut)">'+r[2]+'</td><td style="color:var(--mut);font-size:12px">'+r[3]+'</td><td><span class="pill '+r[4]+'">'+r[5]+'</span></td></tr>').join('')+'</tbody></table></div></div>'+
  '<div class="grid2"><div class="card"><div class="hd"><h2>Specialization check · same scenario, two merchants</h2></div><table class="tbl"><tr><th></th><th>Nova Grocery</th><th>Nova Subscriptions</th></tr><tr><td style="color:var(--mut)">Network prior</td><td class="num">retry rank #1</td><td class="num">retry rank #1</td></tr><tr><td style="color:var(--mut)">Merchant adaptation</td><td>high-frequency, low-AOV</td><td>mandate-bound, LTV-weighted</td></tr><tr><td style="color:var(--mut)"><b>Twin\u2019s choice</b></td><td><span class="pill grn">fast retry</span></td><td><span class="pill acc">calendar shift + link</span></td></tr></table><p style="font-size:11.5px;color:var(--dim);margin-top:8px">Same network intelligence \u00d7 different merchant intelligence \u2192 different payment decision.</p></div>'+
@@ -533,17 +554,19 @@ function cmdAnswer(q){const inc=INC[S.inc]||INC[0];q=q.toLowerCase();
  if(q.includes('recover')||q.includes('how much'))return {t:'Across experiments and live actions this month: <b>\u20b91.84L recovered causally</b> (treatment minus matched control, 95% CI excludes zero). INC-2481 alone has protected '+inr(inc.risk)+' so far.',c:['batch_report.mtd','EXP-118']};
  return {t:'I answer from live evidence: incidents, metrics, decisions, policies and simulations. Try asking why an action was chosen, what could go wrong, or how much revenue was recovered.'}}
 function pgReliability(){
- if(!S.rel)S.rel={loaded:false,live:false,ov:null,suites:[],findings:[]};
+ if(!S.rel)S.rel={loaded:false,live:false,ov:null,suites:[],findings:[],requirements:[]};
  const R=S.rel;
  const head='<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('shield',13)+' PAYMENT RELIABILITY &amp; INTEGRATION ASSURANCE</p><h1>Reliability Lab</h1><p class="sub">Prove your payment integration behaves correctly under real lifecycle failures — duplicate deliveries, forged callbacks, out-of-order events, refund overruns, agent mandate replays — <b>before</b> production finds them for you.</p></div>'+
- '<div class="toolbar"><button class="btn" data-act="relwh" data-k="duplicate">'+ic('zap',14)+' Webhook Lab · duplicate</button><button class="btn pr'+(R.running?' is-loading':'')+'" data-act="relrun">'+ic('play',14)+' Run verification</button></div></div>';
+ '<div class="toolbar"><button class="btn" data-act="relwh" data-k="duplicate">'+ic('zap',14)+' Webhook Lab · duplicate</button><button class="btn" data-act="relrun" data-runtime="1">Run sandbox runtime</button><button class="btn pr'+(R.running?' is-loading':'')+'" data-act="relrun">'+ic('play',14)+' Run verification</button></div></div>';
  if(R.loading)return head+'<div class="card">'+Array(4).fill('<div class="skel" style="height:26px;margin-bottom:10px"></div>').join('')+'</div>';
- if(!R.live&&!R.ov)return head+'<div class="card"><div class="empty">'+illShield()+'<p><b>Connect the PayTwin API to activate the lab.</b><br>Open this page with <span class="chip">?key=&lt;risk_admin key&gt;</span> — the same LIVE connection powers every other page.</p><button class="btn pr" style="margin-top:10px" data-act="palette">Open command palette</button></div></div>';
+ if(!R.live&&!R.ov)return head+'<div class="card"><div class="empty">'+illShield()+'<p><b>Connect the PayTwin Test Mode API to activate the lab.</b><br>Open this page with <span class="chip">?key=&lt;risk_admin key&gt;</span> — the same in-memory API session powers every page.</p><button class="btn pr" style="margin-top:10px" data-act="palette">Open command palette</button></div></div>';
  const ov=R.ov||{},g=ov.gate||{verdict:'—',score:0,critical:0,high:0,medium:0};
  const gcls=g.verdict==='READY'?'ok':g.verdict==='BLOCKED'?'':'';
  const gicon=g.verdict==='READY'?'check':g.verdict==='BLOCKED'?'flame':'alert';
  const gate='<div class="banner '+gcls+'"><span class="ic">'+ic(gicon,18)+'</span><div><b>Release Gate · '+g.verdict+'</b><p>'+(g.critical+' critical · '+g.high+' high · '+g.medium+' medium open findings — critical invariants always override the score.')+'</p></div><div class="amt"><small style="color:var(--dim)">confidence</small><br><b class="num" style="font-size:24px">'+(g.score??0)+'/100</b></div></div>';
- const specs='<div class="card"><div class="hd"><h2>Razorpay specification registry</h2><span class="pill grn">verified '+((ov.spec_registry||{}).last_refresh||'—')+'</span></div><div style="display:flex;gap:22px;font-size:12.5px;color:var(--mut)"><span><b style="color:var(--ink)" class="num">'+((ov.spec_registry||{}).docs_verified??'—')+'</b> pages verified</span><span><b style="color:var(--ink)" class="num">'+((ov.spec_registry||{}).requirements??'—')+'</b> requirements traced</span><span><b style="color:var(--ink)">7</b> safety invariants</span></div></div>';
+ const specs='<div class="card"><div class="hd"><h2>Razorpay specification registry</h2><span class="pill grn">verified '+((ov.spec_registry||{}).last_refresh||'—')+'</span></div><div style="display:flex;gap:22px;font-size:12.5px;color:var(--mut)"><span><b style="color:var(--ink)" class="num">'+((ov.spec_registry||{}).docs_verified??'—')+'</b> pages verified</span><span><b style="color:var(--ink)" class="num">'+((ov.spec_registry||{}).requirements??'—')+'</b> requirements traced</span><span><b style="color:var(--ink)">8</b> safety invariants</span></div></div>';
+ const trace=(R.requirements||[]).filter(function(item){return item.source_url}).slice(0,4).map(function(item){return '<a class="chip" style="text-decoration:none" target="_blank" rel="noreferrer" href="'+esc(item.source_url)+'">'+esc(item.id)+' ↗</a>'}).join('');
+ const traceCard='<div class="card"><div class="hd"><h2>Source-linked controls</h2><span class="pill acc">traceable</span></div><p style="font-size:12px;color:var(--mut);margin-bottom:9px">Requirement IDs shown in each check link back to the Razorpay source used for this sandbox assurance pack.</p><div style="display:flex;gap:6px;flex-wrap:wrap">'+(trace||'<span class="chip">loading sources…</span>')+'</div></div>';
  const cov='<div class="metrics">'+
   metric('Suites',''+(ov.suites??'—'),'coverage','',[])+
   metric('Scenarios',''+(ov.scenarios??'—'),'invariant-backed','',[])+
@@ -555,7 +578,7 @@ function pgReliability(){
  const fnds=R.findings.length?'<div class="card"><div class="hd"><h2>Findings</h2><span class="pill '+(R.findings.some(f=>f.severity==='critical')?'red':R.findings.length?'amb':'grn')+'">'+R.findings.length+' open</span></div><table class="tbl"><thead><tr><th>Finding</th><th>Scenario</th><th>Fixture</th><th>Severity</th><th>Invariants</th><th>Requirements</th></tr></thead><tbody>'+
    R.findings.map(f=>'<tr><td><b>'+esc(f.title)+'</b></td><td class="mono" style="font-size:11px">'+f.scenario+'</td><td class="mono" style="font-size:11px">'+f.fixture+'</td><td><span class="pill '+(f.severity==='critical'?'red':f.severity==='high'?'amb':'mut')+'">'+f.severity+'</span></td><td class="mono" style="font-size:11px">'+Object.keys(f.evidence&&f.evidence.actual||{}).join(', ')||'—'+'</td><td style="font-size:11px;color:var(--dim)">'+(f.requirement_ids||[]).join(', ')+'</td></tr>').join('')+'</tbody></table></div>'
  :'<div class="card"><div class="empty">'+ic('check',22)+'<p><b>No findings.</b> Every scenario passed on the correct integration and every known-broken mutation was detected.</p></div></div>';
- return head+gate+cov+'<div class="grid21">'+suites+fnds+'</div><div class="grid2">'+wh+specs+'</div></div>'}
+ return head+gate+cov+'<div class="grid21">'+suites+fnds+'</div><div class="grid2">'+wh+specs+traceCard+'</div></div>'}
 function pgExp(){return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('chart',13)+' CAUSAL MEASUREMENT</p><h1>Experiments & recovery reports</h1><p class="sub">Every claim of \u201crecovered\u201d is treatment minus matched control. Lift without a control arm is just a hope with a dashboard.</p></div><div class="toolbar"><button class="btn pr" data-act="batchReport">'+ic('dl',14)+' Download Recovery Batch Report</button></div></div>'+
  '<div class="metrics">'+metric('Incremental GMV \u00b7 MTD','\u20b94.32L','+\u20b984k vs Jul','p',[22,30,28,41,45,50,58])+metric('Live experiments','3','+1 this week','',[22,45,45,68,45,68])+metric('Decision confidence','94.6%','+2.1 pts','g',[60,64,68,73,77,81])+metric('Futile retries suppressed','34%','target \u2265 30% \u2713','g',[40,44,52,58,66,72])+'</div>'+
  EXPS.map(e=>'<div class="card"><div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap"><span class="chip" style="padding:8px">A/B</span><div style="flex:1;min-width:220px"><b>'+e.t+'</b> <span class="pill '+e.tone+'">'+e.st+'</span><p style="color:var(--mut);font-size:12px;margin-top:2px">'+e.sub+'</p></div>'+
@@ -619,7 +642,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if
  else if(act==='palette')openPal();else if(act==='pclose')closePal();
  else if(act==='palgo'){const r=palRes[+el.dataset.i];closePal();if(r)r.go()}
  else if(act==='notifs')toast(S.notifs.length?S.notifs.length+' recent events \u2014 all chains verified':'No new notifications. Chains verified.');
- else if(act==='envtoggle'){S.env=S.env==='production'?'simulation':'production';render();toast(S.env==='simulation'?'Simulation mode \u2014 twin sandbox tinted amber':'Back to production view')}
+ else if(act==='envtoggle'){S.env=S.env==='simulation'?'demo':'simulation';render();toast(S.env==='simulation'?'Simulation sandbox enabled':'Demo mode · simulated dataset')}
  else if(act==='chaos'){S.chaosOpen=!S.chaosOpen;$('.chaos').classList.toggle('open')}
  else if(act==='inject')inject(k);
  else if(act==='orgmenu'){S.scope=S.scope==='org'?'mgro':'org';render();toast('Scope: '+scopeName())}
@@ -634,7 +657,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if
  else if(act==='quick'||act==='send'){const inp=$('#cmdIn');sendChat(q||(inp?inp.value:''))}
  else if(act==='scen'){S.scen=k;render()}
  else if(act==='runSim'){const r=mulberry(20260825+S.alloc*7+S.dur);let sum=0;for(let t=0;t<400;t++)sum+=r()*S.alloc*38+r()*S.dur*140;const mean=sum/400,traj=[];for(let i2=0;i2<16;i2++)traj.push(mean/1000*(0.5+i2/14)+(r()-.5)*3);
-  S.simRun={seed:20260825+S.alloc*7+S.dur,p50:Math.round(mean),lo:Math.round(mean*.78),hi:Math.round(mean*1.24),lift:1.9+S.alloc*.11,traj};render();toast('Twin run complete \u00b7 seed reproducible')}
+  S.simRun={scenario:S.scen,seed:20260825+S.alloc*7+S.dur,p50:Math.round(mean),lo:Math.round(mean*.78),hi:Math.round(mean*1.24),lift:1.9+S.alloc*.11,traj};render();toast('Twin run complete · simulated seed reproducible')}
  else if(act==='simMode'){S.env='simulation';render();toast('Simulation mode \u2014 sandbox tinted amber')}
  else if(act==='batchReport')batchReport();else if(act==='auditJsonl')auditExport('jsonl');else if(act==='auditDossier')auditExport('dossier');
  else if(act==='benchDl'){dl('metrics_card.json',JSON.stringify({bench:'PayTwin-Bench r4',seed:20260825,metrics:Object.fromEntries(BENCH.map(b=>[b[0],b[1]]))},null,2),'application/json');toast('metrics_card.json downloaded')}
@@ -644,23 +667,23 @@ document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if
  else if(act==='heatcell')toast(el.dataset.i+' \u00d7 '+el.dataset.p+' \u2014 drilling into cohort payments\u2026');
  else if(act==='connect')toast(el.dataset.n+' connection flow started');
  else if(act==='resolve')toast('Diagnostics opened for '+el.dataset.n);
- else if(act==='toastOp')toast('Prototype view \u2014 this flow lands in Milestone 2 with the live backend');
+ else if(act==='toastOp')toast('Prototype view · connect the test API for the backed flow');
  else if(act==='replay')toast('DEC-4098 replayed read-only \u2014 identical output \u2713 deterministic');
  else if(act==='llmDrill'){S.llmDown=true;render();toast('LLM offline \u2192 deterministic fallback engaged');setTimeout(()=>{S.llmDown=false;if(S.page==='commander')render()},6000)}
  else toast('Wired to the working backend in Milestone 2 \u2014 interaction shown as designed')});
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPal()}if(e.key==='Escape'){closePal();$$('.overlay').forEach(x=>x.remove())}});
-const PAGES={overview:['Command Center','pulse'],cohort:['Cohort Matrix','filter'],warroom:['Incident War Room','alert'],twinlab:['Twin Lab','twin'],policies:['Policies','law'],commander:['AI Commander','bot'],experiments:['Experiments & Recovery','chart'],modelhealth:['Model Health','pulse'],audit:['Audit Explorer','audit'],integrations:['Integrations','plug'],merchants:['Merchants','users'],funnel:['Checkout Funnel','route'],bench:['Benchmark','spark'],reliability:['Reliability Lab','shield']};
-const NAV=[['Command center',['overview','cohort','warroom']],['Intelligence',['twinlab','policies','commander','experiments','modelhealth']],['Platform',['merchants','funnel','integrations','audit','bench']],['Reliability',['reliability']]];
+const PAGES={tour:['Demo Tour','spark'],overview:['Command Center','pulse'],cohort:['Cohort Matrix','filter'],warroom:['Incident War Room','alert'],twinlab:['Twin Lab','twin'],policies:['Policies','law'],commander:['AI Commander','bot'],experiments:['Experiments & Recovery','chart'],modelhealth:['Model Health','pulse'],audit:['Audit Explorer','audit'],integrations:['Integrations','plug'],merchants:['Merchants','users'],funnel:['Checkout Funnel','route'],bench:['Benchmark','spark'],reliability:['Reliability Lab','shield']};
+const NAV=[['Start here',['tour']],['Command center',['overview','cohort','warroom']],['Intelligence',['twinlab','policies','commander','experiments','modelhealth']],['Platform',['merchants','funnel','integrations','audit','bench']],['Reliability',['reliability']]];
 let pageTick=null;
 function render(){document.body.className=S.env==='simulation'?'sim':'';let mount=$('#app');if(!mount){mount=document.createElement('div');mount.id='app';document.body.appendChild(mount)}
  const inc=INC[S.inc]||INC[0];
- const pgf={overview:pgOverview,cohort:pgCohort,warroom:pgWar,twinlab:pgTwin,policies:pgPol,commander:pgCmd,experiments:pgExp,modelhealth:pgModel,audit:pgAudit,integrations:pgInt,merchants:pgMerchants,funnel:pgFunnel,bench:pgBench,reliability:pgReliability}[S.page]||pgOverview;
+ const pgf={tour:pgTour,overview:pgOverview,cohort:pgCohort,warroom:pgWar,twinlab:pgTwin,policies:pgPol,commander:pgCmd,experiments:pgExp,modelhealth:pgModel,audit:pgAudit,integrations:pgInt,merchants:pgMerchants,funnel:pgFunnel,bench:pgBench,reliability:pgReliability}[S.page]||pgOverview;
  mount.innerHTML='<div class="app"><aside class="sidebar"><div class="brand"><span class="mark">'+ic('shield',14)+'</span><span class="wm">paytwin<small>OS</small></span><span class="ver">v2.0</span></div>'+
  '<button class="wsbtn" data-act="orgmenu"><span class="wslogo">N</span><div class="wsmeta"><b>'+esc(S.scope==='org'?ORG.name:MERCH[S.scope].name)+'</b><small>'+(S.scope==='org'?'Organization \u00b7 all merchants':MERCH[S.scope].mode.split(' \u00b7 ')[0])+'</small></div><span class="chev">'+ic('chev',14)+'</span></button>'+
  '<nav class="nav">'+NAV.map(g=>'<p class="grp">'+g[0]+'</p>'+g[1].map(p=>'<button class="item'+(S.page===p?' on':'')+'" data-act="nav" data-p="'+p+'">'+ic(PAGES[p][1],16)+'<span class="lbl">'+PAGES[p][0]+'</span>'+(p==='warroom'&&activeInc().length?'<span class="dot"></span>':'')+'</button>').join('')).join('')+'</nav>'+
  '<div class="sidefoot"><button class="mini" data-act="toastOp">'+ic('check',14)+'<span>All systems monitored</span></button><div class="userchip"><span class="av">AK</span><div class="ucmeta"><b>Akshat Kumar</b><small>Owner</small></div></div></div></aside>'+
- '<div class="mainwrap"><header class="topbar"><button class="iconbtn" data-act="theme" aria-label="toggle theme">'+ic(S.theme==='dark'?'sun':'moon',16)+'</button><button class="searchbtn" data-act="palette">'+ic('search',14)+'<span>Search or jump\u2026</span><kbd>\u2318K</kbd></button><div class="right"><button class="iconbtn" data-act="notifs" aria-label="notifications">'+ic('bell',16)+(S.notifs.length?'<span class="ping"></span>':'')+'</button><button class="envpill" data-act="envtoggle"><span class="dot"></span>'+(S.env==='simulation'?'SIMULATION':'PRODUCTION')+'</button></div></header>'+
- '<div class="statusstrip"><span class="ok">\u25CF event-bus healthy</span><span>\u00b7</span><span>ingest lag <b class="num" data-live="lag">18ms</b></span><span>\u00b7</span><span>models: 7 benched</span><span>\u00b7</span><span class="'+(activeInc().length?'warn':'ok')+'">'+'\u25CF '+activeInc().length+' active incident(s)</span><span style="margin-left:auto" class="mono" data-live="clock">'+nowT()+' IST</span></div>'+
+ '<div class="mainwrap"><header class="topbar"><button class="iconbtn" data-act="theme" aria-label="toggle theme">'+ic(S.theme==='dark'?'sun':'moon',16)+'</button><button class="searchbtn" data-act="palette">'+ic('search',14)+'<span>Search or jump\u2026</span><kbd>\u2318K</kbd></button><div class="right"><button class="iconbtn" data-act="notifs" aria-label="notifications">'+ic('bell',16)+(S.notifs.length?'<span class="ping"></span>':'')+'</button><button class="envpill" data-act="envtoggle" aria-label="'+demoModeLabel()+'"><span class="dot"></span>'+demoModeLabel()+'</button></div></header>'+
+ '<div class="statusstrip"><span class="'+(window.__PTW_LIVE?'ok':'amb')+'">'+(window.__PTW_LIVE?'● test API connected':'● simulator dataset')+'</span><span>\u00b7</span><span>'+(window.__PTW_LIVE?'ingest lag <b class="num" data-live="lag">18ms</b>':'deterministic seeded feed')+'</span><span>\u00b7</span><span>models: 7 benched</span><span>\u00b7</span><span class="'+(activeInc().length?'warn':'ok')+'">'+'\u25CF '+activeInc().length+' active incident(s)</span><span style="margin-left:auto" class="mono" data-live="clock">'+nowT()+' IST</span></div>'+
  '<article class="page">'+pgf()+'</article></div></div>'+
  '<div class="fab" data-act="chaos" title="Chaos console">'+ic('flame',20)+'</div><div class="chaos'+(S.chaosOpen?' open':'')+'"><h4>Chaos console<button style="color:var(--dim)" data-act="chaos">'+ic('x',13)+'</button></h4>'+
  [['psp','Inject PSP degradation'],['issuer','Escalate INC-2482 latency'],['llm','Kill LLM \u2192 fallback drill']].map(c=>'<button class="ci" data-act="inject" data-k="'+c[0]+'">'+c[1]+'</button>').join('')+'<small style="color:var(--dim);font-size:10.5px;display:block;margin-top:2px">Deterministic scenarios \u2014 same seeds as PayTwin-Bench.</small></div>'+
@@ -720,7 +743,7 @@ var qs=new URLSearchParams(location.search);
    - ?key= is stripped from the URL (browser history) immediately
    - localStorage is cleared (legacy migration) and never re-written
    - the key lives only in this closure for the page's lifetime */
-var KEY=qs.get('key')||localStorage.getItem('paytwin_api_key')||'';
+var KEY=qs.get('key')||'';
 try{localStorage.removeItem('paytwin_api_key')}catch(e){}
 if(qs.get('key')){try{history.replaceState(null,'',location.pathname+location.hash)}catch(e){}}
 var H=KEY?{'Authorization':'Bearer '+KEY}:{};
@@ -733,6 +756,10 @@ function api(path,opt){opt=opt||{};var ctl=new AbortController();
     body:opt.body?JSON.stringify(opt.body):undefined,signal:ctl.signal})
     .then(function(r){clearTimeout(t);if(!r.ok)throw new Error('http '+r.status);
       return r.json()}).catch(function(e){clearTimeout(t);throw e});}
+/* Other UI modules reuse this closure-backed request function.  The raw key is
+   never copied back into the URL, localStorage, or a globally readable field. */
+window.__paytwinApi=api;
+window.__paytwinHasAuth=!!KEY;
 
 function hhmm(iso){try{return iso.slice(11,16)}catch(e){return nowT()}}
 function modeName(m){return 'Mode '+m+' · '+({1:'Recommend-only',2:'Approve-first',
@@ -859,23 +886,38 @@ document.addEventListener('click',function(e){
        if(/http 409/.test(String(err2)))toast('Nothing to '+(act==='approve'?'approve':act==='haltInc'?'halt':'resolve')+' — already handled');
        else toast('API rejected the action ('+String(err2).slice(0,40)+')');});
     return}
+  if(act==='surgePreview'){
+    e.stopImmediatePropagation();
+    var surgeScope=el.dataset.scope||S.scope!=='org'&&S.scope||(ORG.merchants[0]||'mer1');
+    api('/api/chaos/preview/surge_bank_failure',{method:'POST',body:{scope:surgeScope,duration_min:10,seed:20260827}})
+     .then(function(r){S.preflight=r;render();toast('Preflight ready · simulated estimate, no events injected');})
+     .catch(function(err2){toast('Preflight unavailable ('+String(err2).slice(0,38)+')');});
+    return}
+  if(act==='surgeInject'){
+    e.stopImmediatePropagation();
+    var injectScope=el.dataset.scope||S.scope!=='org'&&S.scope||(ORG.merchants[0]||'mer1');
+    if(!S.preflight){toast('Preview the scenario first — no synthetic traffic injected');return}
+    api('/api/chaos/surge_bank_failure',{method:'POST',timeout:15000,
+      body:{scope:injectScope,duration_min:5,seed:20260827}})
+     .then(function(r){S.preflight.injected=r.ground_truth;render();
+       toast('Sandbox surge injected · '+r.events_ingested+' verified events');refresh();})
+     .catch(function(err2){toast('Injection blocked or unavailable ('+String(err2).slice(0,38)+')');});
+    return}
   if(act==='runSim'){
     e.stopImmediatePropagation();
     var scope=S.scope!=='org'?S.scope:(ORG.merchants[0]||'mer1');
-    var scen=S.scen==='links'?'payment_links':
-             (S.scen==='reroute'?'reroute_psp':'retry_burst');
     api('/api/twin/simulate',{method:'POST',body:{scope:scope,
-      scenario:scen,alloc_pct:S.alloc||25,duration_min:S.dur||30,
+      scenario:S.scen||'reroute_psp',alloc_pct:S.alloc||25,duration_min:S.dur||30,
       seed:20260825}})
-     .then(function(r){S.simRun={seed:r.seed,
+     .then(function(r){S.simRun={scenario:S.scen,seed:r.seed,
        p50:Math.round(r.p50_paise/100),lo:Math.round(r.lo_paise/100),
        hi:Math.round(r.hi_paise/100),lift:r.lift_pct,
        traj:(r.traj||[]).map(function(v){return Math.round(v/1000)})};
-       render();toast('Twin run complete · seed '+r.seed+' · LIVE');})
+       render();toast('Twin run complete · seed '+r.seed+' · TEST MODE API');})
      .catch(function(){toast('Twin API unreachable')});}
 },true);
 
-/* LIVE telemetry: consume the real SSE endpoint (commit-ordered, per-org).
+/* Test API telemetry: consume the commit-ordered SSE endpoint (per-org).
    EventSource cannot send Authorization headers, so stream over fetch. */
 function startStream(){
   fetch('/api/stream',{headers:H}).then(function(r){
@@ -912,21 +954,21 @@ window.batchReport=function(){if(!LIVE)return _batchReport();
   fetch('/api/reports/recovery-batch?hours=720',{headers:H})
    .then(function(r){return r.text()})
    .then(function(t){dl('paytwin-recovery-batch-report.md',t,'text/markdown');
-     toast('Recovery Batch Report downloaded · LIVE')})
+     toast('Recovery Batch Report downloaded · TEST MODE API')})
    .catch(function(){_batchReport()});};
 window.auditExport=function(fmt){if(!LIVE)return _auditExport(fmt);
   fetch('/api/audit/export?fmt='+fmt,{headers:H})
    .then(function(r){return r.text()})
    .then(function(t){dl('paytwin-audit.'+(fmt==='dossier'?'md':'jsonl'),t,
      fmt==='dossier'?'text/markdown':'application/x-ndjson');
-     toast('Audit export downloaded · LIVE')})
+     toast('Audit export downloaded · TEST MODE API')})
    .catch(function(){_auditExport(fmt)})};
 function badge(){var el=document.querySelector('.envpill');if(!el)return;
   var chip=document.getElementById('livechip');
   if(!chip){chip=document.createElement('span');chip.id='livechip';
     chip.style.cssText='margin-left:6px;font-size:9px;letter-spacing:1px;font-weight:700';
     el.appendChild(chip)}
-  chip.textContent=LIVE?'· LIVE':'· DEMO';
+  chip.textContent=LIVE?'· TEST API':'· DEMO';
   chip.style.color=LIVE?'#3ecf8e':'#f5a524';}
 var _render=render;
 window.render=function(){_render();badge()};
@@ -937,12 +979,12 @@ if(KEY){
     LIVE=true;window.__PTW_LIVE=true;
     hydrate(rs[0],rs[1],rs[2],rs[3],rs[4],rs[5]);
     render();setInterval(refresh,5000);startStream();
-    toast('LIVE · connected to PayTwin OS API');
+    toast('TEST MODE · connected to PayTwin OS API');
   }).catch(function(){LIVE=false;render();
     toast('DEMO · API unreachable - local engine engaged');});
 }else{
   setTimeout(function(){LIVE=false;render();
-    toast('DEMO · set paytwin_api_key or ?key=... to go LIVE');},400);
+    toast('DEMO · add ?key=... to connect the Test Mode API');},400);
 }
 })();
 </script>
@@ -1058,34 +1100,28 @@ applyTheme();
 /* ===== Reliability Lab behavior · additive (data + actions) ===== */
 (function(){
 'use strict';
-function key(){var qs=new URLSearchParams(location.search).get('key');
-  return qs||localStorage.getItem('paytwin_api_key')||''}
-function api(path,opt){opt=opt||{};var k=key();if(!k)return Promise.reject(new Error('no key'));
-  var h={'Authorization':'Bearer '+k};
-  if(opt.body)h['Content-Type']='application/json';
-  return fetch(path,{method:opt.method||'GET',headers:h,
-    body:opt.body?JSON.stringify(opt.body):undefined})
-    .then(function(r){if(!r.ok)throw new Error('http '+r.status);return r.json()})}
+function hasAuth(){return !!window.__paytwinHasAuth}
+function api(path,opt){
+  if(!hasAuth()||!window.__paytwinApi)return Promise.reject(new Error('no key'));
+  return window.__paytwinApi(path,opt);
+}
 
 function ensureState(){if(!S.rel)S.rel={loaded:false,live:false,ov:null,
-  suites:[],findings:[],running:false,lastFault:null}}
+  suites:[],findings:[],requirements:[],running:false,lastFault:null}}
 function load(){
   ensureState();
-  console.log('RELDBG load enter · loaded='+S.rel.loaded+' loading='+S.rel.loading+' live='+S.rel.live+' key='+(!!key()));
-  if(S.rel.loaded||S.rel.loading||!key())return;
+  if(S.rel.loaded||S.rel.loading||!hasAuth())return;
   S.rel.loading=true;
-  console.log('RELDBG fetching…');
   Promise.all([api('/api/reliability/overview'),api('/api/reliability/suites'),
-               api('/api/reliability/findings')])
+               api('/api/reliability/findings'),api('/api/reliability/requirements')])
    .then(function(rs){
-     console.log('RELDBG fetched · suites='+rs[1].suites.length);
      S.rel.ov=rs[0];S.rel.suites=rs[1].suites;S.rel.findings=rs[2].findings;
+     S.rel.requirements=rs[3].registry||[];
      S.rel.live=true;S.rel.loading=false;S.rel.loaded=true;render()})
    .catch(function(e){
      // Any load failure is terminal for this session — the connect card
      // takes over, preventing infinite retry loops against a rotated key.
      S.rel.loaded=true;S.rel.live=false;S.rel.loading=false;
-     console.log('RELLAB load failed: '+e);
      render()})}
 var _rlRender=window.render;
 window.render=function(){_rlRender();
@@ -1102,8 +1138,10 @@ document.addEventListener('click',function(e){
   if(el.dataset.act==='relrun'){
     el.classList.add('is-loading');
     var packs=el.dataset.pack?[el.dataset.pack]:null;
+    var runtime=el.dataset.runtime==='1';
+    var scope=S.scope!=='org'?S.scope:(ORG.merchants[0]||'mer1');
     api('/api/reliability/run',{method:'POST',
-        body:packs?{packs:packs}:{}})
+        body:runtime?{merchant_id:scope}:(packs?{packs:packs}:{})})
      .then(function(run){S.rel.running=false;
        if(S.rel.ov)S.rel.ov.gate=run.gate;
        S.rel.findings=run.findings;

@@ -2,7 +2,7 @@
 VENV = ./.venv/bin
 PY = $(VENV)/python
 
-.PHONY: help setup dev api worker migrate seed demo test loadtest verify clean
+.PHONY: help setup dev api worker migrate seed demo razorpay-demo razorpay-api test loadtest verify clean
 
 help:
 	@echo "make setup     - create venv + editable installs"
@@ -12,6 +12,8 @@ help:
 	@echo "make migrate   - alembic upgrade head"
 	@echo "make seed      - seed demo world (org/merchants/keys/policies)"
 	@echo "make demo      - full flagship demo (history+outage+detect+act+story)"
+	@echo "make razorpay-demo - fresh sandbox Razorpay Test Mode demo + verification"
+	@echo "make razorpay-api  - serve the sandbox Razorpay demo database"
 	@echo "make test      - pytest suite"
 	@echo "make loadtest  - webhook flood + API latency percentiles"
 	@echo "make verify    - audit chain verification against the demo DB"
@@ -47,6 +49,16 @@ demo:
 	PAYTWIN_DATABASE_URL=$${PAYTWIN_DEMO_URL:-sqlite:///$(CURDIR)/data/demo.db} \
 		$(PY) -m paytwin_sim.demo
 	@echo "DEMO_RUN.md written. Open http://localhost:8000/?key=<risk_admin key printed above>"
+
+razorpay-demo:
+	PAYTWIN_DEMO_RESET=1 PAYTWIN_DEMO_HOURS=$${PAYTWIN_DEMO_HOURS:-1.5} PAYTWIN_SEED=$${PAYTWIN_SEED:-42} \
+	PAYTWIN_DATABASE_URL=$${PAYTWIN_RAZORPAY_DEMO_URL:-sqlite:///$(CURDIR)/data/razorpay-hackathon.db} \
+		$(PY) scripts/razorpay_demo.py
+	@echo "RAZORPAY_TEST_MODE_DEMO.md written. Start 'make razorpay-api' and use the risk_admin key printed above."
+
+razorpay-api:
+	PAYTWIN_DATABASE_URL=$${PAYTWIN_RAZORPAY_DEMO_URL:-sqlite:///$(CURDIR)/data/razorpay-hackathon.db} \
+		$(VENV)/uvicorn paytwin_api.main:app --reload --port 8000
 
 test:
 	PAYTWIN_DATABASE_URL=sqlite:///./data/test.db $(PY) -m pytest tests/ -q

@@ -6,7 +6,7 @@ import pytest
 import httpx
 
 from paytwin_api.main import app
-from paytwin_api.models import Organization
+from paytwin_api.models import Merchant, Organization
 from paytwin_api.reliability import packs, store
 from paytwin_api.reliability.engine import run_scenario
 from paytwin_api.reliability.fixtures import FixturePolicy, PRESETS
@@ -43,6 +43,14 @@ def test_late_auth_broken_fixture_violates_capture_gating():
               if s["id"] == "RZP-LATE-AUTH")
     res = run_scenario(sc, PRESETS["fulfil_on_authorized"]())
     assert "PTWIN-INV-001" in res["violations"]
+
+
+def test_multiple_captured_attempts_cannot_fulfil_one_order_twice():
+    sc = next(s for s in packs.RAZORPAY_CORE["scenarios"]
+              if s["id"] == "RZP-ONE-FULFILMENT")
+    assert not run_scenario(sc, PRESETS["correct"]())["violations"]
+    broken = run_scenario(sc, PRESETS["duplicate_fulfilment"]())
+    assert set(broken["violations"]) == {"PTWIN-INV-008"}
 
 
 def test_unsigned_webhook_zero_effects_when_verified():
@@ -176,3 +184,38 @@ def test_unknown_suite_404(api):
                     headers={"Authorization": toks["A"]})
     assert r.status_code == 404
 
+
+def test_requirement_registry_exposes_source_traceability(api):
+    client, toks, _ = api
+    r = client.get("/api/reliability/requirements", headers={"Authorization": toks["A"]})
+    assert r.status_code == 200
+    registry = {item["id"]: item for item in r.json()["registry"]}
+    assert registry["RZPREQ-WEBHOOK-006"]["source"] == "RAZORPAY_DOCUMENTATION"
+    assert registry["RZPREQ-WEBHOOK-006"]["source_url"].startswith("https://razorpay.com/")
+    assert registry["PTWIN-INV-008"]["source"] == "PAYTWIN_INVARIANT"
+
+
+def test_razorpay_runtime_suite_uses_the_real_ingestion_path(api):
+    """The judge-facing runtime pack is tenant-scoped and explicitly sandboxed."""
+    import os
+    from paytwin_api.db import make_engine
+    from sqlalchemy.orm import sessionmaker
+
+    client, toks, _ = api
+    db = sessionmaker(bind=make_engine(os.environ["PAYTWIN_DATABASE_URL"]))()
+    try:
+        db.add(Merchant(id="mer_rzp", organization_id="org1", name="Razorpay Demo",
+                        short_code="RZ", config={"connector": "simulator"}))
+        db.commit()
+    finally:
+        db.close()
+    r = client.post("/api/reliability/run",
+                    json={"merchant_id": "mer_rzp", "packs": ["razorpay/runtime"]},
+                    headers={"Authorization": toks["A"]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "SANDBOX_RUNTIME"
+    assert body["gate"]["verdict"] == "READY"
+    assert body["per_suite"] == [{"suite_id": "razorpay/runtime", "passed": True,
+                                   "checks": 6, "findings": 0,
+                                   "mode": "SANDBOX_RUNTIME"}]

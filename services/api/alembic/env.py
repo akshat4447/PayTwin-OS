@@ -35,6 +35,20 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    # Programmatic callers (the repeatable demo bootstrap) can provide the
+    # exact already-open connection. This avoids accidentally using a cached
+    # Settings database URL when a process has more than one local SQLite DB.
+    supplied_connection = config.attributes.get("connection")
+    if supplied_connection is not None:
+        context.configure(
+            connection=supplied_connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

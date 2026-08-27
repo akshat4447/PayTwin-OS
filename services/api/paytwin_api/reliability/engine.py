@@ -14,9 +14,11 @@ def new_world(home_tenant: str = "t1",
             "mandate_single_use": mandate_single_use}
 
 
-def _fulfil(w: World, ev: dict) -> None:
+def _fulfil(w: World, p: FixturePolicy, ev: dict) -> None:
     o = w["orders"].setdefault(ev["order_id"],
                                {"fulfilled_count": 0, "paid_expected": False})
+    if p.single_fulfilment_per_order and o["fulfilled_count"]:
+        return  # A second successful payment may never create a second fulfilment.
     o["fulfilled_count"] += 1
     w["effects"].append({"kind": "fulfilment", "payment_id": ev["payment_id"],
                          "order_id": ev["order_id"], "tenant": ev["tenant"],
@@ -53,12 +55,12 @@ def handle(w: World, p: FixturePolicy, ev: dict) -> None:
         if pay["status"] != "captured":
             pay["status"] = "authorized"
         if not p.require_captured_for_fulfilment:
-            _fulfil(w, ev)                        # broken gating
+            _fulfil(w, p, ev)                     # broken gating
     elif t == "payment.captured":
         pay["status"] = "captured"
         pay["captured_amount"] = ev["amount"]
         if p.require_captured_for_fulfilment:
-            _fulfil(w, ev)
+            _fulfil(w, p, ev)
         else:                                     # already fulfilled early;
             pass                                  # capture adds no new effect
     elif t == "payment.failed":
@@ -72,7 +74,7 @@ def handle(w: World, p: FixturePolicy, ev: dict) -> None:
         # that a payment was actually captured — exactly the forged-callback
         # bug the bad-signature scenario exists to catch.
         if not p.require_captured_for_fulfilment:
-            _fulfil(w, ev)
+            _fulfil(w, p, ev)
     elif t == "refund.processed":
         if p.idempotent_refunds and (pay["refunded_total"] + ev["amount"]
                                      > pay["captured_amount"]):

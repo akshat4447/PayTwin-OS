@@ -154,6 +154,40 @@ def test_demo_main_refuses_dirty_db_without_reset(tmp_path, monkeypatch):
     assert "PAYTWIN_DEMO_RESET" in str(ei.value)
 
 
+def test_demo_reset_recovers_stale_metadata_created_schema(tmp_path, monkeypatch):
+    """Explicit reset works even if tables are ahead of an old Alembic stamp.
+
+    This reproduces a pre-release Razorpay-demo failure: a previous
+    ``create_all`` had created current tables while ``alembic_version`` still
+    said c7.  Reset must happen before the demo bootstrap attempts migration.
+    """
+    from paytwin_sim import demo
+
+    f = tmp_path / "stale-demo.db"
+    url = f"sqlite:///{f}"
+    monkeypatch.setenv("PAYTWIN_DATABASE_URL", url)
+    engine, _factory = _build_world(f)  # current metadata, including orders
+    with engine.begin() as conn:
+        conn.exec_driver_sql("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+        conn.exec_driver_sql(
+            "INSERT INTO alembic_version (version_num) VALUES ('c7d2e8a41b90')")
+    engine.dispose()
+
+    demo._reset_demo_database()
+    db = demo.make_db()
+    try:
+        assert db.query(Payment).count() == 0
+    finally:
+        db.close()
+    check = make_engine(url)
+    try:
+        with check.connect() as conn:
+            assert conn.exec_driver_sql(
+                "SELECT version_num FROM alembic_version").scalar() == "d8e4c2a9b517"
+    finally:
+        check.dispose()
+
+
 # ------------------------------------------------------- determinism / tooling
 def test_train_models_deterministic_champion(db):
     """Same DB content + same seed ⇒ identical registered champion (B7a anchor fix)."""
@@ -224,4 +258,3 @@ def test_loadtest_cli_parses_url_flag():
                          cwd=REPO, capture_output=True, text=True, timeout=60)
     assert out.returncode == 0
     assert "--url" in out.stdout
-

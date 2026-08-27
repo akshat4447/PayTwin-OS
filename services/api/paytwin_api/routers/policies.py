@@ -13,7 +13,7 @@ from paytwin_api.models import (
     Policy,
     PolicyDecision,
 )
-from paytwin_api.services.policy import DEFAULT_RULES, validate_rules
+from paytwin_api.services.policy import DEFAULT_RULES, merge_rules, validate_rules
 
 router = APIRouter(prefix="/api/policies", tags=["policies"])
 

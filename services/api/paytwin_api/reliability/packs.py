@@ -21,10 +21,10 @@ GENERIC_WEBHOOKS = {
  "req_ids": ["PTWIN-INV-002", "PTWIN-INV-003"],
  "scenarios": [
   {"id": "GEN-WH-DUP", "title": "Duplicate captured-payment delivery",
-   "events": [_pay("e1", 50000), _pay("e1", 50000)],
+  "events": [_pay("e1", 50000), _pay("e1", 50000)],
    "expect_violations": [],
    "mutations": [{"name": "no_dedupe", "preset": "no_dedupe",
-                  "expect": ["PTWIN-INV-002"]}]},
+                  "expect": ["PTWIN-INV-002", "PTWIN-INV-008"]}]},
   {"id": "GEN-WH-BADSIG", "title": "Forged callback rejected",
    "events": [E(event_id="e2", type="order.paid", payment_id="pay_1",
                 order_id="order_1", tenant="t1", amount=50000,
@@ -46,7 +46,7 @@ RAZORPAY_CORE = {
    "events": [_pay("rz1", 64000), _pay("rz1", 64000)],
    "expect_violations": [],
    "mutations": [{"name": "no_dedupe", "preset": "no_dedupe",
-                  "expect": ["PTWIN-INV-002"]}]},
+                  "expect": ["PTWIN-INV-002", "PTWIN-INV-008"]}]},
   {"id": "RZP-WH-FORGED", "title": "Unsigned webhook must not move money state",
    "req_ids": ["RZPREQ-WEBHOOK-006"],
    "events": [_pay("rz2", 64000, ok=False)],
@@ -78,6 +78,13 @@ RAZORPAY_CORE = {
                 order_id="order_1", tenant="t1", amount=40000,
                 signature_ok=True)],
    "expect_violations": [], "mutations": []},
+  {"id": "RZP-ONE-FULFILMENT", "title": "Two captured attempts still fulfil one order once",
+   "req_ids": ["RZPREQ-PAYMENTS-001"],
+   "events": [_pay("rz10", 40000, pid="pay_attempt_1", oid="order_once"),
+              _pay("rz11", 40000, pid="pay_attempt_2", oid="order_once")],
+   "expect_violations": [],
+   "mutations": [{"name": "duplicate_fulfilment", "preset": "duplicate_fulfilment",
+                  "expect": ["PTWIN-INV-008"]}]},
  ]}
 
 TENANT_ISOLATION = {

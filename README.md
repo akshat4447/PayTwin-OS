@@ -3,7 +3,7 @@
 > **Single source of truth** for the product: functionality, specifications, architecture,
 > data model, API, security/privacy, evaluation, operations. Consolidated 2026-08-26 from
 > the former `docs/*` set (see `HISTORY.md` for the build chronology & decision log).
-> Status: **182 pytest green** · migration head `c7d2e8a41b90`.
+> Status: **205 pytest green** · migration head `d8e4c2a9b517`.
 
 **PayTwin OS** is an autonomous **payment-resilience & revenue-intelligence platform**: it
 watches payment traffic across merchants, detects degradation, diagnoses root causes,
@@ -47,13 +47,13 @@ pip install -e packages/contracts -e services/sim -e services/ml -e services/api
 pip install pytest httpx
 
 # 2) tests (sqlite; no services needed)
-make test                        # expect: 182 passed
+make test                        # expect: 205 passed
 
 # 3) flagship demo — seeds world, ingests 3h of traffic with an injected HDFC×UPI outage,
 #    detects, decides, executes, measures, prints keys + writes DEMO_RUN.md
 PAYTWIN_DATABASE_URL=sqlite:///./data/demo.db make demo
 
-# 4) serve API + UI (LIVE mode) — open with a risk_admin key printed by the demo
+# 4) serve API + UI (Test Mode API) — open with a risk_admin key printed by the demo
 PAYTWIN_DATABASE_URL=sqlite:///./data/demo.db make api
 open "http://localhost:8000/?key=<risk_admin key>"
 ```
@@ -61,13 +61,33 @@ open "http://localhost:8000/?key=<risk_admin key>"
 Dev stack: `make dev` (compose postgres :5433 / redis :6380, migrate, api :8000) ·
 `make worker` (30s detection/autopilot/outbox loop). Docker-only alt: `cd infra &&
 docker compose up --build`. Demo refuses a dirty DB — re-run with `PAYTWIN_DEMO_RESET=1`.
-A DB created before migration `c7d2e8a41b90` needs `alembic stamp b47531c6f9e6` once,
+A DB created before migration `d8e4c2a9b517` needs `alembic stamp b47531c6f9e6` once,
 then `upgrade head`.
 
-Make targets: `setup · dev · api · worker · migrate · seed · demo · test · loadtest · verify · clean`.
+Make targets: `setup · dev · api · worker · migrate · seed · demo · razorpay-demo · razorpay-api · test · loadtest · verify · clean`.
+
+### Razorpay hackathon demo (Test Mode only)
+
+```bash
+# Builds the full intelligence story and then verifies the real PayTwin webhook
+# pipeline with six synthetic Razorpay-shaped, HMAC-signed Test Mode deliveries.
+make razorpay-demo
+
+# Use the risk_admin key printed above. The UI clearly remains in Test Mode.
+make razorpay-api
+open "http://localhost:8000/?key=<risk_admin key>"
+```
+
+The verification is deliberately **sandbox-only**: it never calls Razorpay, accepts no
+provider secret through the UI/API, and never enables real payment execution. It proves
+duplicate delivery, forged-signature rejection, out-of-order capture/authorization, late
+authorization, partial-refund accounting, and failed-refund handling against PayTwin's real
+ingestion and state-machine code. The resulting
+`RAZORPAY_TEST_MODE_DEMO.md` is a short judge-facing capability tour.
 
 ## 3) Product surfaces — loop → screens
-Single-page UI, 14 routes (`apps/web/index.html`), each bound to live API endpoints:
+Single-page UI, 15 routes (`apps/web/index.html`), including a guided demo tour. It uses
+seeded data by default and clearly labels a connected local API as Test Mode:
 
 | Loop stage | Screen(s) | Backed by |
 |---|---|---|
@@ -75,13 +95,13 @@ Single-page UI, 14 routes (`apps/web/index.html`), each bound to live API endpoi
 | UNDERSTAND | Incident War Room (timeline, evidence, cohorts) | `/api/incidents/{human_id}` |
 | PREDICT / LEARN | Model Health (metrics, calibration, drift) | `/api/models` |
 | DETECT/DIAGNOSE | War Room RCA (graph attribution, counterfactual) | incidents detail `causes` |
-| SIMULATE | Twin Lab (seeded Monte-Carlo, scenario library) | `/api/twin/simulate` |
+| SIMULATE | Twin Lab (seeded Monte-Carlo, scenario library, pre-incident surge forecast) | `/api/twin/simulate`, `/api/chaos/preview/{scenario}` |
 | DECIDE | Candidates + EV + benchmark | candidates in incident detail |
 | GOVERN | Policies, blocked-actions log | `/api/policies*` |
 | ACT | Executor via connectors (idempotent, audited) | `POST …/execute` |
 | MEASURE | Experiments & Recovery (lift CI, batch report) | `/api/experiments*`, `/api/reports/*` |
 | EXPLAIN | AI Commander (citations, refusals) | `/api/commander/chat` |
-| ASSURE | **Reliability Lab** (release gate, webhook lab) | `/api/reliability/*` |
+| ASSURE | **Reliability Lab** (release gate, webhook lab, source traceability) | `/api/reliability/*` |
 
 Demo stories: **Flagship** (deterministic seed 42): Nova Grocery baseline UPI SR ≈95%,
 inject HDFC×UPI-intent×Cashfree outage 25 min → detect ≤3 windows, top-1 cause = that edge,
@@ -125,15 +145,16 @@ FastAPI :8000 → REST + SSE + serves apps/web ; Commander = read-only tools →
 Conventions: money = **BigInteger paise** (`*_paise`), UTC timestamps, `organization_id`
 everywhere (+`merchant_id` where scoped). Groups:
 - **Tenancy/identity:** organizations · merchants(autonomy_mode 0-4, stage, sr_base_bp, config JSON) · users · api_keys(key_hash sha256, scopes)
-- **Pipeline:** event_inbox UNIQUE(provider,**organization**,external_event_id) · canonical_events append-only UNIQUE(org,provider,external_event_id) · dead_letters · outbox(transactional) · payments UNIQUE(**merchant,provider,payment_ref**), group_id retry groups, status enum created→authorized→success/failed/timeout/refunded
+- **Pipeline:** event_inbox UNIQUE(provider,**organization**,external_event_id) · canonical_events append-only UNIQUE(org,provider,external_event_id) · dead_letters · outbox(transactional) · payments UNIQUE(**merchant,provider,payment_ref**) · **orders** (one business order across attempts) · **refunds** (provider id + partial amount) · **fulfilments** (one per order) · **checkout_verifications** (server-side proof)
 - **Intelligence:** predictions(model/feature version) · incidents(human_id INC-####, RaR lo/hi) · incident_evidence · root_cause_candidates(edge,score,counterfactual_share) · simulations UNIQUE(incident,scenario,seed,params_hash) · action_candidates(ev_paise…) · policies(RP-### versioned rules) · policy_decisions(decision,failed_rules,**policy_version carries contributing versions**) · action_executions(ACT-####, idempotency_key UNIQUE, state machine)
 - **Measurement:** experiments · experiment_assignments UNIQUE(exp,group) · outcomes UNIQUE(assignment)
 - **Models:** model_versions(stage trained→validated→shadow→canary→champion→retired, metrics, artifact)
 - **Audit:** audit_records(seq, prev_hash, hash=sha256(prev+canonical_json)) append-only + **audit_heads checkpoint(org,last_seq,last_hash,count)** — fork guard UNIQUE(org,prev_hash)
 - **Sim ground truth:** sim_scenarios(true_excess_failures, true_rar_paise, true_top_cause)
 
-Migration `c7d2e8a41b90` added tenant-scoped uniques above, cross-relation FKs, audit
-checkpoint/fork-guard; Postgres deployments can layer `infra/rls.sql` row-level security.
+Migration `d8e4c2a9b517` adds order/refund/fulfilment/Checkout-proof integrity records and
+per-integration secret-rotation metadata on top of the tenant-scoped FKs and audit checkpoint;
+Postgres deployments can layer `infra/rls.sql` row-level security.
 
 ## 7) Event contracts & payment state machine
 Ingress: `POST /webhooks/{provider}` + `X-PayTwin-Signature: sha256=HMAC(secret,body)`.
@@ -142,7 +163,7 @@ connectors). Bad signature ⇒ 401 + DLQ; malformed ⇒ 422 + **PII-redacted, si
 DLQ payload; duplicate external id ⇒ 200 `{duplicate:true}`.
 
 Canonical event (v1): `schema_version, id, type(payment.created|authorized|failed|success|
-timeout|refund.created|connector.health), organization_id, merchant_id, provider,
+timeout|refund.created|refund.failed|refund.updated|order.paid|connector.health), organization_id, merchant_id, provider,
 external_event_id, occurred_at, ingested_at, payment_ref, amount_paise, currency=INR,
 cohort{issuer,method,psp,gateway}, payload{failure_class,latency_ms,customer_ref(pseudonym),order_ref,attempt_no,group_id}, late`.
 
@@ -301,7 +322,7 @@ make loadtest && make verify    # perf + audit chain
   incident refs end-to-end.
 
 ## 15) Tests & CI
-`make test` → **182 passed** (sqlite, portable schema). Layers: unit · API integration
+`make test` → **205 passed** (sqlite, portable schema). Layers: unit · API integration
 (httpx ASGI: auth/RBAC/isolation/rate-limit/SSE) · pipeline (dup/late/malformed/out-of-order/
 replay/DLQ/state machine) · ML (determinism/calibration/leakage/registry) · detection/RCA/RaR
 vs ground truth · decisioning (optimizer floor, policy blocks, duplicate execution, autonomy
@@ -313,10 +334,10 @@ CI (`.github/workflows/ci.yml`): pytest + fresh-DB migration drift check → ban
 secret scan (`*.py/*.md/*.yml/*.html` — never commit keys) → ui-smoke headless Chrome.
 
 ## 16) Frontend & design system (PayTwin DS v3)
-Single-file vanilla-JS app (`apps/web/index.html`), no build step, 14 routes (#overview …
-#reliability). LIVE layer: with key hydrates org/merchants/incidents/policies/models from
-`/api/*`, intercepts actions/chat/exports, 5s refresh, badge **LIVE**; without key runs the
-local deterministic engine, badge **DEMO**. DS v3 = shadcn-style semantic tokens (dark-first
+Single-file vanilla-JS app (`apps/web/index.html`), no build step, 15 routes (#tour …
+#reliability). With a key it hydrates org/merchants/incidents/policies/models from `/api/*`,
+intercepts backed actions/chat/exports, and labels the connection **TEST MODE API**; without
+a key it runs the local deterministic engine labeled **DEMO**. DS v3 = shadcn-style semantic tokens (dark-first
 + light/system), Linear-grade dark precision, Geist-style restraint (Inter + JetBrains Mono):
 4-base spacing, radii 8/12/16/pill, hairline separation + two ambient glows, translucent
 sidebar/topbar materials, tabular-nums for money, ⌘K palette, toasts, sheets/modals,
@@ -325,14 +346,17 @@ honored, focus-visible everywhere. Functional contract: all data-act/data-live h
 LIVE layer byte-preserved across redesigns. Visual captures: `docs/ui-shots/{before,after}/`.
 
 ## 17) Operations runbook
-Health: `/api/health`; metrics `/metrics` (worker lag, events total, policy blocks, action
-failures). Symptom→action: UI blank/DEMO ⇒ API down (`make api`) · no incidents ⇒ worker
-lag / outbox undispatched · webhook 401 ⇒ secret mismatch · events stuck ⇒ inspect
-dead_letters then admin replay · twin numbers differ ⇒ seed/params differ (else bug) · action
-stuck ⇒ check executions state + outbox retry (idempotent) · chain invalid ⇒ verify returns
-first bad seq, restore from export. Failure drills (safe by design): kill postgres ⇒ health
-degrades, UI falls back DEMO; kill worker ⇒ outbox grows, restart drains. Repairs: admin
-replay inbox ids (org_admin), model promote (risk_admin, audited), webhook-secret rotation via env.
+Health: `/api/health`; tenant readiness: `/api/operations/status`; admin local repair:
+`POST /api/operations/reconcile`. The repair sweep only settles already-recorded, held refunds
+after their payment is captured and retires expired webhook-secret grace references—it makes no
+provider call, fulfilment, or money movement. Symptom→action: UI blank/DEMO ⇒ API down (`make api`)
+· no incidents ⇒ worker lag / outbox undispatched · webhook 401 ⇒ secret mismatch · events stuck ⇒
+inspect dead_letters · pending refund ⇒ run the reconciler and inspect the canonical event chain ·
+twin numbers differ ⇒ seed/params differ (else bug) · action stuck ⇒ check executions state + outbox
+retry (idempotent) · chain invalid ⇒ verify returns first bad seq, restore from export. Failure drills
+(safe by design): kill postgres ⇒ health degrades, UI falls back DEMO; kill worker ⇒ outbox grows,
+restart drains. Repairs: admin local reconciliation, model promote (risk_admin, audited), bounded
+webhook-secret reference rotation via `/api/integrations/webhook-secret/rotate`.
 
 ## 18) Configuration (`.env.example`)
 `PAYTWIN_ENV` development|production · `PAYTWIN_DATABASE_URL` · `PAYTWIN_REDIS_URL` ·
@@ -340,6 +364,7 @@ replay inbox ids (org_admin), model promote (risk_admin, audited), webhook-secre
 `PAYTWIN_HASH_SALT` (customer_ref pseudonym salt) · `PAYTWIN_LLM_PROVIDER=none|openai|
 anthropic` (+`PAYTWIN_LLM_API_KEY`) · `PAYTWIN_WORKER_INTERVAL=30` ·
 `PAYTWIN_RATE_LIMIT_PER_MIN=240` · `PAYTWIN_ALLOW_REAL_EXECUTION=false` ·
+`PAYTWIN_RAZORPAY_KEY_SECRET` (server-only Checkout verifier secret) ·
 `PAYTWIN_DEMO_RESET` / `PAYTWIN_SEED` / `PAYTWIN_DEMO_URL` (demo controls).
 
 ## 19) Known limitations (honest)
@@ -347,6 +372,9 @@ Neural backbones (FT-Transformer/TabPFN/TimesFM/GNN) stubbed behind ModelBackend
 box; measured baselines shipped instead. Single-node scale measured (~1.2k ev/s); 10K-merchant
 design documented, not benchmarked. Razorpay connector sandbox-ready (no production keys).
 Auth is API-key based; SSO/OIDC future. Postgres rollups (ClickHouse path documented).
+Razorpay support is Test Mode ingress and verification only: external order creation, refund creation,
+Downtime API polling, settlement reconciliation, and any real money execution are intentionally out
+of scope for this build.
 Hosted LLM optional; deterministic composer default. Headless-Chrome smoke instead of full
 Playwright suite. All product metrics are simulator-derived and labeled SIMULATION in-app.
 Demo admission is time-aware: IST quiet hours can approval-gate the best candidate (reported
@@ -377,10 +405,3 @@ executes tests, critical-blocks gate, no live-money testing, recalibrated dual-p
 | `docs/razorpay/` | hashed provider-spec sources + inventory (Reliability Lab provenance) |
 | `project-memory/` | registries (requirements/invariants/traceability), task graph |
 | `data/` | local DBs, reliability run evidence, load results (gitignored artifacts) |
-
-
-
-
-
-
-

@@ -344,6 +344,28 @@ class TestModelsCommanderAuditReportsChaos:
         assert r.status_code == 200
         assert r.json()["events_ingested"] > 0
 
+    def test_chaos_preview_and_compound_surge_are_explicitly_sandboxed(self, client, keys, seeded):
+        h = _h(keys["admin1"])
+        preview = client.post("/api/chaos/preview/surge_bank_failure",
+                              json={"scope": "mer1", "duration_min": 10, "seed": 77},
+                              headers=h)
+        assert preview.status_code == 200
+        body = preview.json()
+        assert body["mode"] == "SANDBOX_FORECAST"
+        assert body["forecast"]["traffic_multiplier"] == 4.0
+        assert body["forecast"]["projected_failure_rate"] > body["forecast"]["baseline_failure_rate"]
+        assert len(body["recommended_actions"]) == 4
+        assert "not live Razorpay telemetry" in body["risk_model"]["limitation"]
+
+        injected = client.post("/api/chaos/surge_bank_failure",
+                               json={"scope": "mer1", "duration_min": 1, "seed": 77},
+                               headers=h)
+        assert injected.status_code == 200
+        result = injected.json()
+        assert result["mode"] == "SANDBOX_INJECTION"
+        assert result["events_ingested"] > 0
+        assert result["ground_truth"]["top_cause"]["kind"] == "surge_bank_failure"
+
     def test_chaos_requires_write(self, client, keys, seeded):
         r = client.post("/api/chaos/issuer_outage",
                         json={"scope": "mer1"}, headers=_h(keys["fin1"]))

@@ -130,5 +130,121 @@ class Payment(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     final_status_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refunded_amount_paise: Mapped[int] = mapped_column(BigInteger, default=0)
     recovered: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class Order(Base):
+    """Merchant order separate from individual payment attempts.
+
+    A Razorpay Order can receive several payment attempts.  It becomes paid only
+    after a captured payment/order.paid signal, and owns the one-business-effect
+    fulfilment record.
+    """
+
+    __tablename__ = "orders"
+    __table_args__ = (
+        UniqueConstraint("merchant_id", "provider", "order_ref",
+                         name="uq_order_merchant_provider_ref"),
+        UniqueConstraint("merchant_id", "receipt", name="uq_order_merchant_receipt"),
+        Index("ix_order_merchant_status", "merchant_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("ord"))
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(30))
+    order_ref: Mapped[str] = mapped_column(String(200))
+    receipt: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    amount_paise: Mapped[int] = mapped_column(BigInteger, default=0)
+    amount_paid_paise: Mapped[int] = mapped_column(BigInteger, default=0)
+    currency: Mapped[str] = mapped_column(String(8), default="INR")
+    status: Mapped[str] = mapped_column(String(20), default="created")
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now,
+                                                  onupdate=_now)
+
+
+class Refund(Base):
+    """Provider refund lifecycle, kept independent from the aggregate payment state."""
+
+    __tablename__ = "refunds"
+    __table_args__ = (
+        UniqueConstraint("merchant_id", "provider", "refund_ref",
+                         name="uq_refund_merchant_provider_ref"),
+        UniqueConstraint("merchant_id", "idempotency_key",
+                         name="uq_refund_merchant_idempotency"),
+        Index("ix_refund_payment_status", "payment_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("rfd"))
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True)
+    payment_id: Mapped[str] = mapped_column(String(40), ForeignKey("payments.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(30))
+    refund_ref: Mapped[str] = mapped_column(String(200))
+    amount_paise: Mapped[int] = mapped_column(BigInteger, default=0)
+    currency: Mapped[str] = mapped_column(String(8), default="INR")
+    status: Mapped[str] = mapped_column(String(20), default="created")
+    idempotency_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    receipt: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    speed_requested: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    speed_processed: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now,
+                                                  onupdate=_now)
+
+
+class Fulfilment(Base):
+    """One idempotent business effect per paid order."""
+
+    __tablename__ = "fulfilments"
+    __table_args__ = (
+        UniqueConstraint("order_id", name="uq_fulfilment_order"),
+        UniqueConstraint("idempotency_key", name="uq_fulfilment_idempotency"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("ful"))
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True)
+    order_id: Mapped[str] = mapped_column(String(40), ForeignKey("orders.id"), index=True)
+    payment_id: Mapped[str] = mapped_column(String(40), ForeignKey("payments.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="fulfilled")
+    idempotency_key: Mapped[str] = mapped_column(String(80))
+    source: Mapped[str] = mapped_column(String(60), default="system")
+    fulfilled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class CheckoutVerification(Base):
+    """Server-side Razorpay Checkout verification evidence; never stores the secret."""
+
+    __tablename__ = "checkout_verifications"
+    __table_args__ = (
+        UniqueConstraint("merchant_id", "provider", "payment_ref",
+                         name="uq_checkout_verify_merchant_provider_payment"),
+        Index("ix_checkout_verify_order", "order_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("vfy"))
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True)
+    order_id: Mapped[str] = mapped_column(String(40), ForeignKey("orders.id"), index=True)
+    payment_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("payments.id"), nullable=True)
+    provider: Mapped[str] = mapped_column(String(30))
+    payment_ref: Mapped[str] = mapped_column(String(200))
+    signature_valid: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[str] = mapped_column(String(20), default="rejected")
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

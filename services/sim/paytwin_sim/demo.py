@@ -30,12 +30,20 @@ def _db_url() -> str:
 def make_db():
     os.environ.setdefault("PAYTWIN_DATABASE_URL", _db_url())
     from paytwin_api.db import Base, make_engine, make_session_factory
+    from sqlalchemy import inspect
 
     import paytwin_api.models  # noqa: F401  # populate Base.metadata
 
     engine = make_engine(os.environ["PAYTWIN_DATABASE_URL"])
-    Base.metadata.create_all(engine)
-    _stamp_alembic(engine)
+    # Fresh demos can bootstrap fast via metadata. A persisted demo database
+    # already has an Alembic stamp, however, and must be upgraded before ORM
+    # queries touch a newly added column (otherwise `make razorpay-demo` fails
+    # before its reset flag even gets the chance to rebuild the data).
+    if "alembic_version" in inspect(engine).get_table_names():
+        _upgrade_alembic(engine)
+    else:
+        Base.metadata.create_all(engine)
+        _stamp_alembic(engine)
     return make_session_factory(engine)()
 
 
@@ -57,10 +65,33 @@ def _stamp_alembic(engine) -> None:
         ini = pathlib.Path(__file__).resolve().parents[2] / "api" / "alembic.ini"
         cfg = Config(str(ini))
         cfg.set_main_option("script_location", str(ini.parent / "alembic"))
-        command.stamp(cfg, "head")
+        # Bind Alembic to this exact engine instead of resolving Settings
+        # again. Settings are cached by design, and a demo/test process may
+        # legitimately work with a different database URL.
+        with engine.begin() as connection:
+            cfg.attributes["connection"] = connection
+            command.stamp(cfg, "head")
         print("[demo] stamped alembic head (create_all bootstrap)")
     except Exception as e:  # stamping is best-effort; never block the demo
         print(f"[demo] alembic stamp skipped: {e}")
+
+
+def _upgrade_alembic(engine) -> None:
+    """Upgrade an existing persisted demo DB before the ORM uses it."""
+    try:
+        from alembic import command
+        from alembic.config import Config
+
+        ini = pathlib.Path(__file__).resolve().parents[2] / "api" / "alembic.ini"
+        cfg = Config(str(ini))
+        cfg.set_main_option("script_location", str(ini.parent / "alembic"))
+        with engine.begin() as connection:
+            cfg.attributes["connection"] = connection
+            command.upgrade(cfg, "head")
+    except Exception as e:
+        # A persisted database with a migration stamp cannot safely be used if
+        # it cannot advance. Surface the real migration error to the operator.
+        raise RuntimeError(f"could not upgrade demo database to Alembic head: {e}") from e
 
 
 MERCHANT_SPECS = [
@@ -85,7 +116,8 @@ DEFAULT_POLICIES = [
 def seed_world(db) -> dict:
     """Org Nova Commerce x 4 prototype merchants + api keys + live policies."""
     from paytwin_api.auth import new_api_key
-    from paytwin_api.models import ApiKey, Merchant, Organization, Policy
+    from paytwin_api.connectors import get_connector
+    from paytwin_api.models import ApiKey, Integration, Merchant, Organization, Policy
 
     if db.query(Organization).filter_by(id="org1").one_or_none() is None:
         db.add(Organization(id="org1", name="Nova Commerce"))
@@ -114,6 +146,16 @@ def seed_world(db) -> dict:
             db.add(Policy(organization_id="org1", merchant_id="mgro",
                           human_id=human, name=name, version=1, status="live",
                           rules=rules, created_by="demo"))
+    # A visible, sandbox-only Razorpay connection makes the hackathon story
+    # reproducible without ever storing a provider secret in the database.
+    razorpay = (db.query(Integration)
+                .filter_by(merchant_id="mgro", provider="razorpay").one_or_none())
+    if razorpay is None:
+        db.add(Integration(
+            organization_id="org1", merchant_id="mgro", provider="razorpay",
+            status="test_mode", secret_ref="PAYTWIN_WEBHOOK_SECRET_RAZORPAY",
+            capabilities=get_connector("razorpay").capabilities().as_dict(),
+        ))
     db.commit()
     return {"org_id": "org1", "keys": keys}
 
@@ -146,14 +188,19 @@ def seed_history(db, org_id: str, seed: int = 42, hours: float | None = None,
         res = generate(mid, hours=spec_hours if hours is None else hours,
                        seed=seed, start=start, scenarios=scen,
                        scenario_start_offset_min=scen_offset, tpm_scale=scale)
-        for payload in to_webhook_payloads(res.events):
+        for index, payload in enumerate(to_webhook_payloads(res.events), start=1):
             body = json.dumps(payload).encode()
             sig = "sha256=" + _hmac.new(secret.encode(), body,
                                         hashlib.sha256).hexdigest()
-            r = ingest_webhook(db, "simulator", mid, body, sig)
+            r = ingest_webhook(db, "simulator", mid, body, sig, commit=False)
             if r.status != 200:
                 raise RuntimeError(
                     f"ingest failed for {mid}: {r.status} {r.body}")
+            # The normal request path commits each webhook.  Demo history uses
+            # bounded transactions so a judge can build the full scenario in a
+            # practical amount of time without skipping the real pipeline.
+            if index % 500 == 0:
+                db.commit()
         summary["events"] += len(res.events)
         summary["payments"] += res.n_payments
         if mid == "mgro":
@@ -320,33 +367,51 @@ def money_story(story: dict, model_info: dict, history: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _reset_demo_database() -> None:
+    """Remove a demo database's data and migration stamp before rebuilding.
+
+    This is deliberately called only for the explicit ``PAYTWIN_DEMO_RESET=1``
+    path.  Dropping the Alembic stamp matters: metadata-created demo tables may
+    be newer than the old stamp, and retaining that stamp would make Alembic
+    try to recreate tables after the reset.
+    """
+    from paytwin_api.db import Base, make_engine
+
+    import paytwin_api.models  # noqa: F401  # populate Base.metadata
+
+    eng = make_engine(_db_url())
+    try:
+        Base.metadata.drop_all(eng)
+        with eng.begin() as conn:
+            conn.exec_driver_sql("DROP TABLE IF EXISTS alembic_version")
+    finally:
+        eng.dispose()
+
+
 def main(seed: int | None = None) -> dict:
     seed = seed if seed is not None else int(
         os.environ.get("PAYTWIN_SEED", "42"))
+    # Reset happens *before* make_db() so a deliberately rebuilt demo never
+    # queries a stale schema or attempts to migrate disposable half-created
+    # tables.  The reset flag is explicit and documented in the error below.
+    if os.environ.get("PAYTWIN_DEMO_RESET") == "1":
+        _reset_demo_database()
     db = make_db()
-    from paytwin_api.db import Base, make_engine
-
     from paytwin_api.models import Payment
 
-    # A dirty DB double-ingests history and destroys detection baselines (B4):
-    # refuse unless an explicit wipe is requested.
+    # A dirty DB double-ingests history and destroys detection baselines (B4).
     if db.query(Payment).count() > 0:
-        if os.environ.get("PAYTWIN_DEMO_RESET") != "1":
-            raise SystemExit(
-                "refusing to run: database already contains payments. Re-run with "
-                "PAYTWIN_DEMO_RESET=1 to wipe and rebuild, or point "
-                "PAYTWIN_DATABASE_URL at a fresh file.")
-        url = _db_url()
-        db.close()
-        eng = make_engine(url)
-        Base.metadata.drop_all(eng)
-        Base.metadata.create_all(eng)
-        eng.dispose()
-        db = make_db()
+        raise SystemExit(
+            "refusing to run: database already contains payments. Re-run with "
+            "PAYTWIN_DEMO_RESET=1 to wipe and rebuild, or point "
+            "PAYTWIN_DATABASE_URL at a fresh file.")
     print("1/5 seeding world (org, merchants, keys, policies)…")
     world = seed_world(db)
-    print("2/5 ingesting 3h of history across 4 merchants (+outage on mgro)…")
-    history = seed_history(db, world["org_id"], seed=seed)
+    hours = os.environ.get("PAYTWIN_DEMO_HOURS")
+    span = float(hours) if hours else 3.0
+    print(f"2/5 ingesting {span:g}h of history across 4 merchants (+outage on mgro)…")
+    history = seed_history(db, world["org_id"], seed=seed,
+                           hours=float(hours) if hours else None)
     print(f"   ingested {history['events']} events / {history['payments']} payments")
     print("3/5 training + registering success-probability model…")
     model_info = train_models(db, seed=seed)

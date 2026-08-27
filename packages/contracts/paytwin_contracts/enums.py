@@ -10,6 +10,9 @@ class EventType(StrEnum):
     PAYMENT_SUCCESS = "payment.success"
     PAYMENT_TIMEOUT = "payment.timeout"
     REFUND_CREATED = "refund.created"
+    REFUND_FAILED = "refund.failed"
+    REFUND_UPDATED = "refund.updated"
+    ORDER_PAID = "order.paid"
     CONNECTOR_HEALTH = "connector.health"
 
 

@@ -66,6 +66,25 @@ class TestScenarioInjection:
         r = generate("mgro", 1, seed=7, start=START)
         assert r.truth == []
 
+    def test_surge_plus_bank_failure_scales_traffic_and_keeps_attribution(self):
+        base = generate("mgro", 2, seed=42, start=START,
+                        scenario_start_offset_min=60)
+        stressed = generate("mgro", 2, seed=42, start=START,
+                            scenarios=["surge_bank_failure"],
+                            scenario_start_offset_min=60)
+        # The active 20-minute 4× window lifts overall volume substantially;
+        # exact equality is intentionally not expected from Poisson traffic.
+        base_terminal = [e for e in base.events
+                         if e.etype != "created" and 60 <= (e.epoch - int(START.timestamp())) // 60 < 80]
+        stress_terminal = [e for e in stressed.events
+                           if e.etype != "created" and 60 <= (e.epoch - int(START.timestamp())) // 60 < 80]
+        assert len(stress_terminal) > len(base_terminal) * 2.5
+        assert stressed.truth
+        assert {row["kind"] for row in stressed.truth} == {"surge_bank_failure"}
+        assert all(row["cohort"]["issuer"] == "HDFC"
+                   and row["cohort"]["method"] == "upi_intent"
+                   for row in stressed.truth)
+
 
 class TestScaleAndContracts:
     def test_500k_capability(self):

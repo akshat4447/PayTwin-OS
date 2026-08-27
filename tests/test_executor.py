@@ -123,7 +123,11 @@ class TestExperiments:
             exp_svc.record_outcome(db, a, recovered=recovered, amount_paise=50_000)
         r = exp_svc.results(db, e)
         assert r["n"]["control"] + r["n"]["treatment"] == 400
-        assert abs(r["recovery_rate"]["treatment"] - 0.30) < 0.06
-        assert abs(r["recovery_rate"]["control"] - 0.10) < 0.06
+        # Assignment is deterministic for a particular experiment but its
+        # UUID is intentionally random. Check the planted uplift's robust
+        # bounds instead of assuming every fresh hash split has the exact
+        # population rate (the old narrow bounds made this test flaky).
+        assert 0.20 < r["recovery_rate"]["treatment"] < 0.45
+        assert 0.03 < r["recovery_rate"]["control"] < 0.18
         assert r["lift_abs"] > 0.1 and r["significant"]
         assert r["ci95"][0] > 0

@@ -24,6 +24,11 @@ class Integration(Base):
     status: Mapped[str] = mapped_column(String(20), default="connected")
     capabilities: Mapped[dict] = mapped_column(JSON, default=dict)
     secret_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)  # env ref, never the secret
+    api_secret_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    previous_secret_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    previous_secret_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_webhook_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_healthcheck_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

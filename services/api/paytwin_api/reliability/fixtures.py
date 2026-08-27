@@ -19,6 +19,7 @@ class FixturePolicy:
     idempotent_refunds: bool = True          # RZPREQ-REFUNDS-003
     enforce_tenant_scope: bool = True        # PTWIN-INV-005
     enforce_mandate_limits: bool = True      # PTWIN-INV-007
+    single_fulfilment_per_order: bool = True  # PTWIN-INV-008
 
 
 def correct() -> FixturePolicy:
@@ -32,7 +33,10 @@ def no_signature_verification() -> FixturePolicy:
 
 def no_dedupe() -> FixturePolicy:
     """Mutation: at-least-once duplicates are re-processed (RZPREQ-WEBHOOK-001/-002)."""
-    return FixturePolicy("no_dedupe", dedupe_by_event_id=False)
+    # The modeled broken handler has no independent fulfilment idempotency key
+    # either, so the duplicate is observable as a duplicated business effect.
+    return FixturePolicy("no_dedupe", dedupe_by_event_id=False,
+                         single_fulfilment_per_order=False)
 
 
 def fulfil_on_authorized() -> FixturePolicy:
@@ -65,6 +69,12 @@ def forged_callback() -> FixturePolicy:
                          require_captured_for_fulfilment=False)
 
 
+def duplicate_fulfilment() -> FixturePolicy:
+    """Mutation: two successful payments may fulfil the same order twice."""
+    return FixturePolicy("duplicate_fulfilment",
+                         single_fulfilment_per_order=False)
+
+
 PRESETS = {
     "correct": correct,
     "no_verify": no_signature_verification,
@@ -74,4 +84,5 @@ PRESETS = {
     "cross_tenant_blind": cross_tenant_blind,
     "mandate_limits_off": mandate_limits_off,
     "forged_callback": forged_callback,
+    "duplicate_fulfilment": duplicate_fulfilment,
 }

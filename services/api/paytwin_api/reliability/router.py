@@ -5,12 +5,17 @@ import datetime
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
 from ..auth import Principal
-from ..deps import current_principal
+from ..deps import current_principal, get_db, require_admin
+from ..models import Merchant
+from ..services import audit as audit_svc
 from . import packs, store
 from .engine import run_scenario
 from .fixtures import PRESETS
+from .requirements import REGISTRY, requirement_details, summary as requirement_summary
+from .runtime import SandboxOnlyError, run_razorpay_runtime_checks
 
 router = APIRouter(prefix="/api/reliability", tags=["reliability"])
 
@@ -33,8 +38,10 @@ def _finding(scenario_id: str, fixture: str, res: dict,
     return {"finding_id": "F-" + uuid.uuid4().hex[:8], "scenario": scenario_id,
             "title": title, "severity": severity, "fixture": fixture,
             "source": "PAYTWIN_INVARIANT", "requirement_ids": req_ids,
+            "requirement_trace": requirement_details(req_ids),
             "evidence": {"expected": res["expected"],
-                         "actual": res["violations"]}}
+                         "actual": res["violations"]},
+            "recommended_fix": "Inspect the invariant evidence, correct the integration boundary, then rerun this deterministic scenario."}
 
 
 def _gate(findings: list[dict]) -> dict:
@@ -45,6 +52,22 @@ def _gate(findings: list[dict]) -> dict:
     return {"verdict": verdict,
             "score": max(0, 100 - 25 * crit - 10 * high - 3 * med),
             "critical": crit, "high": high, "medium": med}
+
+
+def _unknown_gate(reason: str) -> dict:
+    """Fail closed when reliability evidence is unavailable or unreadable."""
+    return {"verdict": "UNKNOWN", "score": 0, "critical": 0, "high": 0,
+            "medium": 0, "reason": reason}
+
+
+def _runs_for_org(org_id: str) -> tuple[list[dict] | None, dict | None]:
+    """Return tenant evidence, or a gate that deliberately prevents release."""
+    try:
+        return [r for r in store.load_runs() if r.get("org_id") == org_id], None
+    except store.EvidenceMissing:
+        return None, _unknown_gate("no reliability evidence has been recorded")
+    except store.EvidenceStoreError:
+        return None, _unknown_gate("reliability evidence is unavailable or corrupt")
 
 
 def _execute_suite(suite: dict) -> tuple[list[dict], list[dict], bool]:
@@ -89,7 +112,8 @@ router = APIRouter(prefix="/api/reliability", tags=["reliability"])
 @router.get("/overview")
 def overview(p: Principal = Depends(current_principal)) -> dict:
     suites = packs.all_suites()
-    mine = [r for r in store.load_runs() if r.get("org_id") == p.organization_id]
+    mine, unavailable_gate = _runs_for_org(p.organization_id)
+    mine = mine or []
     last = mine[0] if mine else None
     return {"suites": len(suites),
             "scenarios": sum(len(s["scenarios"]) for s in suites),
@@ -97,9 +121,15 @@ def overview(p: Principal = Depends(current_principal)) -> dict:
                                         for r in s.get("req_ids", [])}),
             "last_run": ({"run_id": last["run_id"], "at": last["at"],
                           "gate": last["gate"]} if last else None),
-            "gate": last["gate"] if last else _gate([]),
-            "spec_registry": {"provider": "razorpay", "docs_verified": 7,
-                              "requirements": 14, "last_refresh": "2026-08-26"}}
+            "gate": last["gate"] if last else (unavailable_gate or _unknown_gate("no run for this organization")),
+            "spec_registry": requirement_summary()}
+
+
+@router.get("/requirements")
+def requirements(p: Principal = Depends(current_principal)) -> dict:
+    """Return requirement-to-source traceability shown in the demo assurance UI."""
+    return {"registry": requirement_details(sorted(REGISTRY)),
+            "spec_registry": requirement_summary()}
 
 
 @router.get("/suites")
@@ -115,9 +145,17 @@ def suites(p: Principal = Depends(current_principal)) -> dict:
 
 @router.post("/run")
 def run(body: dict | None = None,
-        p: Principal = Depends(current_principal)) -> dict:
+        p: Principal = Depends(current_principal),
+        db: Session = Depends(get_db)) -> dict:
+    require_admin(p)
     body = body or {}
-    wanted = body.get("packs") or [s["suite_id"] for s in packs.all_suites()]
+    merchant_id = body.get("merchant_id")
+    requested = body.get("packs")
+    wanted = requested or [s["suite_id"] for s in packs.all_suites()]
+    runtime_requested = "razorpay/runtime" in wanted
+    wanted = [sid for sid in wanted if sid != "razorpay/runtime"]
+    if runtime_requested and not merchant_id:
+        raise HTTPException(422, "merchant_id is required for razorpay/runtime")
     checks: list[dict] = []
     findings: list[dict] = []
     per_suite = []
@@ -131,17 +169,52 @@ def run(body: dict | None = None,
                          for x in f])
         per_suite.append({"suite_id": sid, "passed": ok,
                           "checks": len(c), "findings": len(f)})
+    if merchant_id:
+        merchant = (db.query(Merchant)
+                    .filter(Merchant.id == merchant_id,
+                            Merchant.organization_id == p.organization_id)
+                    .one_or_none())
+        if merchant is None:
+            raise HTTPException(404, "merchant not found")
+        try:
+            runtime = run_razorpay_runtime_checks(db, merchant.id)
+        except SandboxOnlyError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        checks.extend(runtime["checks"])
+        findings.extend([{**f, "suite": runtime["suite_id"],
+                          "org_id": p.organization_id}
+                         for f in runtime["findings"]])
+        per_suite.append({"suite_id": runtime["suite_id"],
+                          "passed": runtime["passed"],
+                          "checks": len(runtime["checks"]),
+                          "findings": len(runtime["findings"]),
+                          "mode": runtime["mode"]})
     run = {"run_id": "REL-" + uuid.uuid4().hex[:8], "at": _now(),
-           "org_id": p.organization_id, "mode": body.get("mode", "test"),
+           "org_id": p.organization_id,
+           "mode": "SANDBOX_RUNTIME" if merchant_id else "SANDBOX_FIXTURE",
            "seed": 20260825, "per_suite": per_suite, "checks": checks,
            "findings": findings, "gate": _gate(findings)}
-    store.save_run(run)
+    try:
+        store.save_run(run)
+    except store.EvidenceStoreError as exc:
+        raise HTTPException(503, "could not persist reliability evidence") from exc
+    audit_svc.append_audit(
+        db, p.organization_id, actor=p.user_id or f"{p.role}@{p.key_prefix}",
+        actor_role=p.role, action_type="reliability.run", object_type="reliability_run",
+        object_id=run["run_id"], summary="Sandbox reliability verification completed",
+        details={"mode": run["mode"], "merchant_id": merchant_id,
+                 "gate": run["gate"]},
+    )
+    db.commit()
     return run
 
 
 @router.get("/runs")
 def runs(p: Principal = Depends(current_principal)) -> dict:
-    mine = [r for r in store.load_runs() if r.get("org_id") == p.organization_id]
+    mine, unavailable_gate = _runs_for_org(p.organization_id)
+    if unavailable_gate:
+        return {"runs": [], "gate": unavailable_gate}
+    mine = mine or []
     return {"runs": [{"k": r["run_id"], "at": r["at"], "gate": r["gate"],
                       "verdict": r["gate"]["verdict"]} | {}
                      for r in mine]}
@@ -149,7 +222,10 @@ def runs(p: Principal = Depends(current_principal)) -> dict:
 
 @router.get("/runs/{run_id}")
 def get_run(run_id: str, p: Principal = Depends(current_principal)) -> dict:
-    r = store.get_run(run_id)
+    try:
+        r = store.get_run(run_id)
+    except store.EvidenceStoreError:
+        raise HTTPException(503, "reliability evidence is unavailable")
     if not r or r.get("org_id") != p.organization_id:
         raise HTTPException(404, "run not found")
     return r
@@ -157,15 +233,22 @@ def get_run(run_id: str, p: Principal = Depends(current_principal)) -> dict:
 
 @router.get("/findings")
 def findings(p: Principal = Depends(current_principal)) -> dict:
-    mine = [r for r in store.load_runs() if r.get("org_id") == p.organization_id]
+    mine, unavailable_gate = _runs_for_org(p.organization_id)
+    if unavailable_gate:
+        return {"findings": [], "count": 0, "gate": unavailable_gate}
+    mine = mine or []
     out = [f for r in mine for f in r["findings"]]
     return {"findings": out, "count": len(out)}
 
 
 @router.get("/release-gate")
 def release_gate(p: Principal = Depends(current_principal)) -> dict:
-    runs = [r for r in store.load_runs() if r.get("org_id") == p.organization_id]
-    gate = runs[0]["gate"] if runs else _gate([])
+    runs, unavailable_gate = _runs_for_org(p.organization_id)
+    if unavailable_gate:
+        return {"org_id": p.organization_id, **unavailable_gate,
+                "basis": "reliability evidence unavailable"}
+    runs = runs or []
+    gate = runs[0]["gate"] if runs else _unknown_gate("no run for this organization")
     return {"org_id": p.organization_id, **gate,
             "basis": "latest reliability run" if runs else "no runs yet"}
 
@@ -187,6 +270,7 @@ NOTES = {
 @router.post("/webhook-lab/{fault}")
 def webhook_lab(fault: str,
                 p: Principal = Depends(current_principal)) -> dict:
+    require_admin(p)
     if fault not in WEBHOOK_FAULTS:
         raise HTTPException(404, f"unknown fault '{fault}'")
     sid, preset = WEBHOOK_FAULTS[fault]
@@ -198,4 +282,3 @@ def webhook_lab(fault: str,
             "observed": res["evidence"],
             "invariant_violations": res["violations"],
             "note": NOTES[fault]}
-

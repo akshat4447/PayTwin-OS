@@ -127,11 +127,15 @@ from paytwin_api.routers.audit import router as audit_router  # noqa: E402
 from paytwin_api.routers.reports import router as reports_router  # noqa: E402
 from paytwin_api.routers.chaos import router as chaos_router  # noqa: E402
 from paytwin_api.routers.stream import router as stream_router  # noqa: E402
+from paytwin_api.routers.integrations import router as integrations_router  # noqa: E402
+from paytwin_api.routers.checkout import router as checkout_router  # noqa: E402
+from paytwin_api.routers.operations import router as operations_router  # noqa: E402
 from paytwin_api.reliability.router import router as reliability_router  # noqa: E402
 
 for _r in (overview_router, incidents_router, twin_router, policies_router,
            commander_router, experiments_router, models_router, audit_router,
-           reports_router, chaos_router, stream_router, reliability_router):
+           reports_router, chaos_router, stream_router, integrations_router,
+           checkout_router, operations_router, reliability_router):
     app.include_router(_r)
 
 

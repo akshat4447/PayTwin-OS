@@ -3,6 +3,8 @@ correctness, policy enforcement, audit/outbox semantics, rate limiting, DLQ."""
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 from datetime import datetime, timezone
 
@@ -10,8 +12,8 @@ import pytest
 
 from paytwin_api.auth import new_api_key
 from paytwin_api.config import get_settings
-from paytwin_api.models import (AuditHead, AuditRecord, DeadLetter,
-                                Merchant, Organization, Payment, Policy)
+from paytwin_api.models import (AuditHead, AuditRecord, DeadLetter, EventInbox,
+                                Integration, Merchant, Organization, Payment, Policy)
 from paytwin_api.services import audit as audit_svc
 from paytwin_api.services import executor
 from paytwin_api.services.bus import bus, publish_outbox
@@ -150,6 +152,41 @@ class TestPipelineCorrectness:
         p2 = apply_event(db, e_late)
         assert p2.status == "authorized"  # forward-only by state rank
 
+    def test_failed_authorized_success_is_an_allowed_lifecycle(self, db):
+        """A late authorization may legitimately recover an earlier failure."""
+        _mk_org_merchant(db)
+        t0 = datetime(2026, 8, 25, 10, tzinfo=timezone.utc)
+        events = (
+            ("payment.failed", "evt_fail", t0, "failed"),
+            ("payment.authorized", "evt_auth", t0.replace(minute=1), "authorized"),
+            ("payment.success", "evt_succ", t0.replace(minute=2), "success"),
+        )
+        for event_type, event_id, occurred_at, expected in events:
+            payment = apply_event(db, CanonicalEvent(
+                type=event_type, organization_id="org1", merchant_id="mer1",
+                provider="simulator", external_event_id=event_id,
+                occurred_at=occurred_at, payment_ref="pay_late_auth", amount_paise=100))
+            assert payment.status == expected
+        assert payment.final_status_at == t0.replace(minute=2)
+
+    def test_success_and_refund_cannot_be_overwritten(self, db):
+        _mk_org_merchant(db)
+        t0 = datetime(2026, 8, 25, 10, tzinfo=timezone.utc)
+
+        def apply(event_type: str, event_id: str, minute: int):
+            return apply_event(db, CanonicalEvent(
+                type=event_type, organization_id="org1", merchant_id="mer1",
+                provider="simulator", external_event_id=event_id,
+                occurred_at=t0.replace(minute=minute), payment_ref="pay_final",
+                amount_paise=100))
+
+        assert apply("payment.success", "evt_success", 0).status == "success"
+        assert apply("payment.failed", "evt_after_success_fail", 1).status == "success"
+        assert apply("payment.authorized", "evt_after_success_auth", 2).status == "success"
+        # Refund is the one valid forward transition from success.
+        assert apply("refund.created", "evt_refund", 3).status == "refunded"
+        assert apply("payment.success", "evt_after_refund", 4).status == "refunded"
+
     def test_razorpay_lifecycle_events_are_distinct(self, db):
         _mk_org_merchant(db)
         from paytwin_api.connectors import get_connector
@@ -198,6 +235,46 @@ class TestPipelineCorrectness:
         p = db.query(Payment).filter_by(payment_ref="pay_pii").one()
         assert p.customer_ref and p.customer_ref.startswith("c_")
         assert "cust_RAW_77" not in (p.customer_ref or "")
+
+    def test_successful_inbox_payload_is_redacted(self, db):
+        _mk_org_merchant(db)
+        body = _sim_payload("evt_inbox_pii", "created", "pay_inbox_pii",
+                            customer_ref="cust_RAW_88", vpa="person@upi",
+                            pan="4111111111111111", cvv="123")
+        r = ingest_webhook(db, "simulator", "mer1", body, _sig(db, body))
+        assert r.status == 200
+        inbox = db.query(EventInbox).filter_by(external_event_id="evt_inbox_pii").one()
+        blob = json.dumps(inbox.payload)
+        for raw in ("cust_RAW_88", "person@upi", "4111111111111111", '"123"'):
+            assert raw not in blob
+        assert "[redacted]" in blob
+
+    def test_unknown_provider_is_typed_404_not_an_exception(self, db):
+        _mk_org_merchant(db)
+        r = ingest_webhook(db, "not_a_provider", "mer1", b"{}", "")
+        assert r.status == 404
+        assert r.body["error"]["code"] == "unknown_provider"
+        assert db.query(DeadLetter).filter_by(reason="unknown_provider").count() == 1
+
+    def test_inbound_integration_secret_ref_is_preferred(self, db, monkeypatch):
+        merchant = _mk_org_merchant(db)
+        secret_name = "PAYTWIN_TEST_RAZORPAY_WEBHOOK_SECRET"
+        secret = "merchant-specific-test-secret"
+        monkeypatch.setenv(secret_name, secret)
+        db.add(Integration(organization_id="org1", merchant_id=merchant.id,
+                           provider="razorpay", secret_ref=secret_name))
+        db.commit()
+        body = json.dumps({
+            "event": "payment.authorized",
+            "payload": {"payment": {"entity": {
+                "id": "pay_rzp_secret", "amount": 12_900, "method": "upi",
+                "created_at": 1_772_000_000,
+            }}},
+        }).encode()
+        signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        r = ingest_webhook(db, "razorpay", merchant.id, body, signature)
+        assert r.status == 200
+        assert r.body["payment_status"] == "authorized"
 
 
 # ------------------------------------------------- policy enforcement
@@ -336,3 +413,34 @@ class TestRateLimiting:
         assert loop.run_until_complete(self._drive(mw, "/webhooks/simulator", "9")) == 200
         assert loop.run_until_complete(self._drive(mw, "/api/health", "9")) == 200
         loop.close()
+
+
+class TestWorkerAndPolicyPreview:
+    def test_worker_sweeps_every_organization(self, db, monkeypatch):
+        from paytwin_api.services import incident_service
+        from paytwin_api.worker import run_once
+
+        db.add_all([Organization(id="org1", name="Org 1"),
+                    Organization(id="org2", name="Org 2")])
+        db.commit()
+        seen: list[str] = []
+        monkeypatch.setattr(incident_service, "run_detection_cycle",
+                            lambda _db, org_id: seen.append(org_id) or [])
+
+        result = run_once(db)
+        assert seen == ["org1", "org2"]
+        assert result["organizations"] == 2
+        assert result["opened"] == 0 and result["executed"] == []
+
+    def test_policy_preview_merges_draft_rules(self, db):
+        from paytwin_api.auth import Principal
+        from paytwin_api.routers.policies import PreviewBody, preview
+
+        _mk_org_merchant(db)
+        result = preview(
+            PreviewBody(merchant_id="mer1", draft_rules={"amount_cap": 100_000}),
+            Principal(organization_id="org1", role="risk_admin", key_prefix="ptw_test"),
+            db,
+        )
+        assert result == {"replayed": 0, "would_block": 0,
+                          "verdict_changes": 0, "unchanged": 0}

@@ -38,7 +38,7 @@ def dispatch_outbox(db) -> int:
     return len(rows)
 
 
-def detection_pass(db, org_id: str = "org1") -> dict:
+def _detection_pass_for_org(db, org_id: str) -> dict:
     """One sweep per merchant; auto-execute best candidate when policy allows."""
     from paytwin_api.models import ActionCandidate, Merchant
     from paytwin_api.services import executor, incident_service
@@ -60,14 +60,39 @@ def detection_pass(db, org_id: str = "org1") -> dict:
     return {"opened": len(opened), "executed": executed}
 
 
+def detection_pass(db, org_id: str | None = None) -> dict:
+    """Run detection/autopilot for one org, or every org when no scope is given."""
+    if org_id is not None:
+        return _detection_pass_for_org(db, org_id)
+
+    from paytwin_api.models import Organization
+
+    org_ids = [row[0] for row in db.query(Organization.id)
+               .order_by(Organization.id.asc()).all()]
+    passes = []
+    for current_org_id in org_ids:
+        result = _detection_pass_for_org(db, current_org_id)
+        passes.append({"organization_id": current_org_id, **result})
+    return {
+        "organizations": len(passes),
+        "opened": sum(result["opened"] for result in passes),
+        "executed": [execution for result in passes for execution in result["executed"]],
+        "passes": passes,
+    }
+
+
 def run_once(db) -> dict:
+    from paytwin_api.services.reconciliation import reconcile_financial_state
+
     result = detection_pass(db)
+    result["reconciliation"] = reconcile_financial_state(db)
+    db.commit()
     result["outbox_dispatched"] = dispatch_outbox(db)
     return result
 
 
 def main() -> None:
-    print(f"[worker] starting · interval {INTERVAL}s · org1")
+    print(f"[worker] starting · interval {INTERVAL}s · all organizations")
     while True:
         try:
             db = _db()

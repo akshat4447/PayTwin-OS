@@ -10,6 +10,7 @@ class Scenario:
     cohort: dict                      # dims to match: issuer/method/psp/gateway (missing = any)
     failure_multiplier: float         # applied to (1 - sr) of matched payments
     latency_multiplier: float = 1.0
+    traffic_multiplier: float = 1.0
     duration_min: int = 25
     label: str = ""
 
@@ -39,6 +40,14 @@ SCENARIOS = {
     "rate_limit": Scenario(
         kind="rate_limit", cohort={"issuer": "SBI"},
         failure_multiplier=3.5, duration_min=18, label="SBI rate limiting"),
+    "flash_sale_surge": Scenario(
+        kind="flash_sale_surge", cohort={}, failure_multiplier=1.0,
+        traffic_multiplier=4.0, duration_min=20,
+        label="4× flash-sale traffic surge"),
+    "surge_bank_failure": Scenario(
+        kind="surge_bank_failure", cohort={"issuer": "HDFC", "method": "upi_intent"},
+        failure_multiplier=9.0, latency_multiplier=3.2, traffic_multiplier=4.0,
+        duration_min=20, label="4× surge with HDFC × UPI intent degradation"),
 }
 
 

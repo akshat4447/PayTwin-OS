@@ -66,6 +66,17 @@ def agent_mandate_single_use(w: World) -> str | None:
     return None
 
 
+def one_fulfilment_per_order(w: World) -> str | None:
+    """Multiple payment attempts can settle one order, never two deliveries."""
+    counts: dict[str, int] = {}
+    for effect in w["effects"]:
+        if effect["kind"] == "fulfilment":
+            order_id = effect["order_id"]
+            counts[order_id] = counts.get(order_id, 0) + 1
+    dupes = {order_id: count for order_id, count in counts.items() if count > 1}
+    return f"orders fulfilled more than once: {dupes}" if dupes else None
+
+
 EVALUATORS = {
     "PTWIN-INV-001": no_fulfilment_without_captured,
     "PTWIN-INV-002": one_effect_per_event,
@@ -74,6 +85,7 @@ EVALUATORS = {
     "PTWIN-INV-005": tenant_isolation,
     "PTWIN-INV-006": out_of_order_converges,
     "PTWIN-INV-007": agent_mandate_single_use,
+    "PTWIN-INV-008": one_fulfilment_per_order,
 }
 
 
