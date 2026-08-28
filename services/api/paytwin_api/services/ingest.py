@@ -78,14 +78,41 @@ def _secrets_for(db: Session, provider: str, merchant: Merchant) -> tuple[str, .
     return tuple(dict.fromkeys(secrets))
 
 
-def ingest_webhook(db: Session, provider: str, merchant_id: str, body: bytes,
+def _canonical_envelope(event) -> dict:
+    """Store only the PII-safe, normalized work item needed by the worker."""
+    return {
+        "type": event.type, "organization_id": event.organization_id,
+        "merchant_id": event.merchant_id, "provider": event.provider,
+        "external_event_id": event.external_event_id,
+        "occurred_at": event.occurred_at.isoformat(), "payment_ref": event.payment_ref,
+        "amount_paise": event.amount_paise, "currency": event.currency,
+        "cohort": event.cohort, "payload": event.payload,
+    }
+
+
+def _from_envelope(payload: dict):
+    from paytwin_contracts import CanonicalEvent
+
+    return CanonicalEvent(
+        type=payload["type"], organization_id=payload["organization_id"],
+        merchant_id=payload["merchant_id"], provider=payload["provider"],
+        external_event_id=payload["external_event_id"],
+        occurred_at=datetime.fromisoformat(payload["occurred_at"]),
+        payment_ref=payload["payment_ref"], amount_paise=int(payload["amount_paise"]),
+        currency=payload.get("currency", "INR"), cohort=payload.get("cohort") or {},
+        payload=payload.get("payload") or {},
+    )
+
+
+def accept_webhook(db: Session, provider: str, merchant_id: str, body: bytes,
                    signature: str, headers: dict | None = None,
                    *, commit: bool = True) -> IngestResult:
-    """Verify, normalize, persist, and materialize a provider webhook.
+    """Authenticate and durably accept a webhook without applying side effects.
 
-    Request handlers use the default transactional commit.  Deterministic demo
-    seeding may set ``commit=False`` and commit bounded batches without bypassing
-    any of the real connector, inbox, canonical-event, or state-machine logic.
+    Provider handlers can return a 202 immediately after this function commits.
+    The worker later reads ``canonical_payload`` and materializes the same event
+    transactionally. Direct callers should use :func:`ingest_webhook`, which
+    accepts and processes synchronously for deterministic tests and local tools.
     """
     m = db.query(Merchant).filter(Merchant.id == merchant_id).one_or_none()
     if m is None:
@@ -135,23 +162,23 @@ def ingest_webhook(db: Session, provider: str, merchant_id: str, body: bytes,
         .one_or_none()
     )
     if existing is not None:
-        existing.status = "duplicate"
+        # A retry can arrive between durable acknowledgement and worker
+        # materialization. Never mutate the original ``received`` item to
+        # duplicate: doing so would silently discard the only work item.
+        if existing.status == "processed":
+            # Keep the legacy observable duplicate marker once all side
+            # effects are already complete. A still-received item is left
+            # untouched so a retry cannot discard pending work.
+            existing.status = "duplicate"
         if commit:
             db.commit()
         return IngestResult(200, {"duplicate": True, "id": existing.id})
 
-    # Late-event detection vs last seen occurrence for this merchant
-    last = (
-        db.query(CanonicalEventRow.occurred_at)
-        .filter(CanonicalEventRow.merchant_id == m.id)
-        .order_by(CanonicalEventRow.occurred_at.desc())
-        .first()
-    )
-    late = bool(last and event.occurred_at < last[0].replace(tzinfo=timezone.utc) - timedelta(seconds=60))
-
-    inbox = EventInbox(organization_id=m.organization_id, provider=provider,
-                       external_event_id=event.external_event_id, signature_ok=True,
-                       status="received", payload=_inbox_payload(raw_payload))
+    inbox = EventInbox(organization_id=m.organization_id, merchant_id=m.id,
+                       provider=provider, external_event_id=event.external_event_id,
+                       signature_ok=True, status="received",
+                       payload=_inbox_payload(raw_payload),
+                       canonical_payload=_canonical_envelope(event))
     db.add(inbox)
     try:
         with db.begin_nested():  # concurrent retry loses the race, not the request
@@ -169,31 +196,72 @@ def ingest_webhook(db: Session, provider: str, merchant_id: str, body: bytes,
             return IngestResult(200, {"duplicate": True, "id": winner.id})
         raise
 
-    row = CanonicalEventRow(
-        organization_id=event.organization_id, merchant_id=event.merchant_id,
-        type=event.type, provider=event.provider, external_event_id=event.external_event_id,
-        occurred_at=event.occurred_at, payment_ref=event.payment_ref,
-        amount_paise=event.amount_paise, currency=event.currency,
-        issuer=event.cohort.get("issuer"), method=event.cohort.get("method"),
-        psp=event.cohort.get("psp"), gateway=event.cohort.get("gateway"),
-        payload=event.payload, late=late,
-    )
-    db.add(row)
-    db.flush()
-
-    payment = apply_event(db, event)
-
     integration = (db.query(Integration)
                    .filter(Integration.merchant_id == m.id,
                            Integration.provider == provider).one_or_none())
     if integration is not None:
         integration.last_webhook_at = datetime.now(timezone.utc)
+    if commit:
+        db.commit()
+    return IngestResult(202, {"accepted": True, "id": inbox.id,
+                              "event": event.type})
 
+
+def materialize_inbox(db: Session, inbox_id: str, *, commit: bool = True) -> IngestResult:
+    """Materialize exactly one previously authenticated delivery.
+
+    Inbox idempotency is committed before this work starts. The canonical-event
+    unique constraint is a second guard should a process fail between stages.
+    """
+    inbox = db.query(EventInbox).filter(EventInbox.id == inbox_id).with_for_update().one_or_none()
+    if inbox is None:
+        return IngestResult(404, {"error": {"code": "inbox_not_found", "message": inbox_id}})
+    if inbox.status in {"processed", "duplicate"}:
+        return IngestResult(200, {"duplicate": True, "id": inbox.id})
+    try:
+        event = _from_envelope(inbox.canonical_payload or {})
+    except (KeyError, TypeError, ValueError) as exc:
+        inbox.status = "dead"
+        inbox.error = f"invalid canonical envelope: {exc}"[:500]
+        if commit:
+            db.commit()
+        return IngestResult(422, {"error": {"code": "invalid_inbox", "message": "cannot materialize"}})
+
+    # Late-event detection vs last seen occurrence for this merchant
+    last = (
+        db.query(CanonicalEventRow.occurred_at)
+        .filter(CanonicalEventRow.merchant_id == event.merchant_id)
+        .order_by(CanonicalEventRow.occurred_at.desc())
+        .first()
+    )
+    late = bool(last and event.occurred_at < last[0].replace(tzinfo=timezone.utc) - timedelta(seconds=60))
+    try:
+        row = CanonicalEventRow(
+            organization_id=event.organization_id, merchant_id=event.merchant_id,
+            type=event.type, provider=event.provider, external_event_id=event.external_event_id,
+            occurred_at=event.occurred_at, payment_ref=event.payment_ref,
+            amount_paise=event.amount_paise, currency=event.currency,
+            issuer=event.cohort.get("issuer"), method=event.cohort.get("method"),
+            psp=event.cohort.get("psp"), gateway=event.cohort.get("gateway"),
+            payload=event.payload, late=late,
+        )
+        db.add(row)
+        with db.begin_nested():
+            db.flush()
+    except IntegrityError:
+        # Canonical state and inbox state are changed together; a collision
+        # means another worker already completed this delivery.
+        inbox.status = "processed"
+        if commit:
+            db.commit()
+        return IngestResult(200, {"duplicate": True, "id": inbox.id})
+
+    payment = apply_event(db, event)
     inbox.status = "processed"
     inbox.processed_at = datetime.now(timezone.utc)
-    publish_outbox(db, m.organization_id, "payment.updated", {
+    publish_outbox(db, event.organization_id, "payment.updated", {
         "event": event.type, "payment_ref": event.payment_ref,
-        "merchant_id": m.id, "status": payment.status,
+        "merchant_id": event.merchant_id, "status": payment.status,
         "amount_paise": event.amount_paise, "late": late,
         "cohort": event.cohort,
     })
@@ -201,6 +269,45 @@ def ingest_webhook(db: Session, provider: str, merchant_id: str, body: bytes,
         db.commit()
     return IngestResult(200, {"ok": True, "event": event.type, "payment_status": payment.status,
                               "late": late, "canonical_id": row.id})
+
+
+def process_pending_inbox(db: Session, *, limit: int = 200) -> dict:
+    """Materialize a bounded batch of durable webhook deliveries for the worker."""
+    ids = [row[0] for row in (db.query(EventInbox.id)
+                               .filter(EventInbox.status == "received")
+                               .order_by(EventInbox.received_at.asc())
+                               .limit(max(1, min(limit, 1000))).all())]
+    processed = failed = 0
+    for inbox_id in ids:
+        try:
+            result = materialize_inbox(db, inbox_id, commit=False)
+            if result.status < 300:
+                processed += 1
+            else:
+                failed += 1
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            row = db.query(EventInbox).filter(EventInbox.id == inbox_id).one_or_none()
+            if row is not None:
+                row.status = "dead"
+                row.error = str(exc)[:500]
+                db.commit()
+            failed += 1
+    return {"received": len(ids), "processed": processed, "failed": failed}
+
+
+def ingest_webhook(db: Session, provider: str, merchant_id: str, body: bytes,
+                   signature: str, headers: dict | None = None,
+                   *, commit: bool = True) -> IngestResult:
+    """Synchronous compatibility path used by deterministic tools and tests."""
+    accepted = accept_webhook(db, provider, merchant_id, body, signature,
+                              headers=headers, commit=False)
+    if accepted.status != 202:
+        if commit:
+            db.commit()
+        return accepted
+    return materialize_inbox(db, accepted.body["id"], commit=commit)
 
 
 _PII_KEYS = {"customer_ref", "customer_id", "vpa", "email", "phone", "contact",

@@ -32,5 +32,6 @@ from paytwin_api.models.measure import (  # noqa: F401
     Integration,
     ModelVersion,
     Outcome,
+    ReliabilityRun,
     SimScenario,
 )

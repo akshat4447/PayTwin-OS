@@ -2,8 +2,11 @@
 -- The application already tenant-filters every query by organization_id; these
 -- policies make cross-tenant reads impossible even if a future query forgets.
 -- Apply as a superuser: psql "$PAYTWIN_DATABASE_URL" -f infra/rls.sql
--- Requires the app to SET app.current_org per connection/transaction, e.g.:
---   SET app.current_org = 'org1';
+-- The API calls SELECT set_config('app.current_org', org_id, true) after
+-- credential resolution and on every subsequent transaction. Apply this using
+-- an app role that does not own the tables; table owners bypass RLS by default.
+-- A production auth lookup should be performed by a dedicated SECURITY DEFINER
+-- function or a narrowly privileged auth connection before FORCE RLS is used.
 
 DO $$
 DECLARE t text;
@@ -13,7 +16,8 @@ BEGIN
     'dead_letters', 'outbox', 'payments', 'predictions', 'incidents',
     'simulations', 'action_candidates', 'policies', 'policy_decisions',
     'action_executions', 'integrations', 'experiments', 'experiment_assignments',
-    'outcomes', 'audit_records', 'audit_heads', 'sim_scenarios']
+    'outcomes', 'audit_records', 'audit_heads', 'sim_scenarios', 'orders',
+    'refunds', 'fulfilments', 'checkout_verifications', 'reliability_runs']
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', t);

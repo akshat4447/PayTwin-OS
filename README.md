@@ -53,9 +53,9 @@ make test                        # expect: 205 passed
 #    detects, decides, executes, measures, prints keys + writes DEMO_RUN.md
 PAYTWIN_DATABASE_URL=sqlite:///./data/demo.db make demo
 
-# 4) serve API + UI (Test Mode API) — open with a risk_admin key printed by the demo
+# 4) serve API + UI (local Test Mode API) — open with a risk_admin key printed by the demo
 PAYTWIN_DATABASE_URL=sqlite:///./data/demo.db make api
-open "http://localhost:8000/?key=<risk_admin key>"
+open "http://localhost:8000/#key=<risk_admin key>"
 ```
 
 Dev stack: `make dev` (compose postgres :5433 / redis :6380, migrate, api :8000) ·
@@ -66,7 +66,7 @@ then `upgrade head`.
 
 Make targets: `setup · dev · api · worker · migrate · seed · demo · razorpay-demo · razorpay-api · test · loadtest · verify · clean`.
 
-### Razorpay hackathon demo (Test Mode only)
+### Credential-free Razorpay-compatible local Test Mode
 
 ```bash
 # Builds the full intelligence story and then verifies the real PayTwin webhook
@@ -75,11 +75,16 @@ make razorpay-demo
 
 # Use the risk_admin key printed above. The UI clearly remains in Test Mode.
 make razorpay-api
-open "http://localhost:8000/?key=<risk_admin key>"
+open "http://localhost:8000/#key=<risk_admin key>"
 ```
 
-The verification is deliberately **sandbox-only**: it never calls Razorpay, accepts no
-provider secret through the UI/API, and never enables real payment execution. It proves
+The local environment is deliberately **sandbox-only**: it never calls Razorpay, accepts no
+provider secret through the UI/API, and never enables real payment execution. No Razorpay
+account, credentials, secret keys, or public webhook URL are required. The Integrations
+screen can create a local order, emit a raw-body HMAC-signed payment callback, verify the
+Checkout proof, record exactly one fulfilment, and process a refund through the real
+inbox, state-machine and audit paths. Every such response is labelled
+LOCAL_RAZORPAY_TEST, so it cannot be mistaken for an account-backed provider feed. It proves
 duplicate delivery, forged-signature rejection, out-of-order capture/authorization, late
 authorization, partial-refund accounting, and failed-refund handling against PayTwin's real
 ingestion and state-machine code. The resulting

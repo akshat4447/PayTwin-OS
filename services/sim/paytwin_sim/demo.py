@@ -153,7 +153,10 @@ def seed_world(db) -> dict:
     if razorpay is None:
         db.add(Integration(
             organization_id="org1", merchant_id="mgro", provider="razorpay",
-            status="test_mode", secret_ref="PAYTWIN_WEBHOOK_SECRET_RAZORPAY",
+            # This is an environment-variable *reference*, never a secret.  The
+            # literal is intentionally kept visible so a zero-config local test
+            # workspace works out of the box.
+            status="test_mode", secret_ref="PAYTWIN_WEBHOOK_SECRET_RAZORPAY",  # nosec B106
             capabilities=get_connector("razorpay").capabilities().as_dict(),
         ))
     db.commit()

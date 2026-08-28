@@ -76,7 +76,7 @@ def main() -> int:
     output = REPO / "RAZORPAY_TEST_MODE_DEMO.md"
     output.write_text(_markdown(report))
     print(output.read_text())
-    print("UI: start `make razorpay-api`, then open http://localhost:8000/?key=<risk_admin key>")
+    print("UI: start `make razorpay-api`, then open http://localhost:8000/#key=<risk_admin key>")
     return 0 if report["passed"] else 1
 
 

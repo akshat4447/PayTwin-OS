@@ -25,7 +25,14 @@ def get_db():
 
 
 def current_principal(request: Request, db: Session = Depends(get_db)) -> Principal:
-    return resolve_principal(db, request.headers.get("authorization"))
+    principal = resolve_principal(db, request.headers.get("authorization"))
+    # Authentication precedes tenant scoping because the credential lookup is
+    # the one bootstrap query. All downstream endpoint queries inherit this
+    # transaction-local context on PostgreSQL.
+    from paytwin_api.db import set_tenant_context
+
+    set_tenant_context(db, principal.organization_id)
+    return principal
 
 
 def require_write(p: Principal) -> Principal:

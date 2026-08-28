@@ -1,0 +1,13 @@
+.git
+.venv
+.pytest_cache
+**/__pycache__
+*.py[cod]
+data/
+project-memory/
+*.db
+*.sqlite*
+.env
+.DS_Store
+DEMO_RUN.md
+RAZORPAY_TEST_MODE_DEMO.md

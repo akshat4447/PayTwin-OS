@@ -183,7 +183,7 @@ def test_demo_reset_recovers_stale_metadata_created_schema(tmp_path, monkeypatch
     try:
         with check.connect() as conn:
             assert conn.exec_driver_sql(
-                "SELECT version_num FROM alembic_version").scalar() == "d8e4c2a9b517"
+                "SELECT version_num FROM alembic_version").scalar() == "a2b7c9d3e1f4"
     finally:
         check.dispose()
 

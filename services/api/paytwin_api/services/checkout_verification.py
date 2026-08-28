@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from paytwin_api.models import CheckoutVerification, Integration, Order, Payment
+from paytwin_api.config import get_settings
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,12 @@ def _checkout_secret(db: Session, merchant_id: str) -> str:
     # This fallback is intentionally distinct from the webhook secret.  It
     # supports a local Test Mode demo without letting webhook configuration
     # accidentally become a Checkout signing key.
-    return os.environ.get(ref or "PAYTWIN_RAZORPAY_KEY_SECRET", "")
+    configured = os.environ.get(ref or "PAYTWIN_RAZORPAY_KEY_SECRET", "")
+    # A credential-free local Test Mode includes a development-only Checkout
+    # key so the full browser-proof path can be exercised. Production startup
+    # rejects this default and never reaches this fallback.
+    return configured or (get_settings().razorpay_key_secret
+                          if not get_settings().is_prod else "")
 
 
 def _record(db: Session, *, order: Order, payment: Payment | None,

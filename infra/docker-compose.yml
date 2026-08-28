@@ -47,6 +47,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8000/api/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+      start_period: 25s
 
   worker:
     build:
@@ -57,7 +63,7 @@ services:
       <<: *api_env
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   pgdata:

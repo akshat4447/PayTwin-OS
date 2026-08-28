@@ -28,6 +28,7 @@ class Capabilities:
             "downtime_feed": self.downtime_feed,
             "direct_retry": self.direct_retry,
             "refund": self.refund,
+            "notes": self.notes,
         }
 
 

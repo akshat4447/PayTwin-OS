@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     webhook_secret_simulator: str = "sim-secret-dev"
     webhook_secret_mockprovider: str = "mock-secret-dev"
     webhook_secret_razorpay: str = "rzp-secret-dev"
+    # Development-only local Razorpay-compatible Checkout signature key. It is
+    # deliberately distinct from the webhook HMAC and is rejected in prod when
+    # left at this value. A real Razorpay Test Mode secret is supplied only via
+    # a server-side environment reference on the integration.
+    razorpay_key_secret: str = "rzp-checkout-secret-dev"
     hash_salt: str = "dev-hash-salt"  # salt for customer_ref pseudonymization
 
     llm_provider: str = "none"  # none | openai | anthropic
@@ -47,7 +52,7 @@ class Settings(BaseSettings):
 
     _DEV_SECRET_DEFAULTS = {
         "dev-secret-change-me", "sim-secret-dev", "mock-secret-dev",
-        "rzp-secret-dev", "dev-hash-salt",
+        "rzp-secret-dev", "rzp-checkout-secret-dev", "dev-hash-salt",
     }
 
     def validate_for_env(self) -> None:
@@ -60,7 +65,7 @@ class Settings(BaseSettings):
         if self.secret_key in self._DEV_SECRET_DEFAULTS or len(self.secret_key) < 32:
             problems.append("secret_key is a known default or too short (<32 chars)")
         for name in ("webhook_secret_simulator", "webhook_secret_mockprovider",
-                     "webhook_secret_razorpay", "hash_salt"):
+                     "webhook_secret_razorpay", "razorpay_key_secret", "hash_salt"):
             if getattr(self, name) in self._DEV_SECRET_DEFAULTS:
                 problems.append(f"{name} is still a development default")
         if self.allow_real_execution:
@@ -74,4 +79,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

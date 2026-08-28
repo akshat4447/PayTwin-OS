@@ -8,6 +8,7 @@ explicit, tenant-scoped, and auditable.
 from __future__ import annotations
 
 import re
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
@@ -31,6 +32,7 @@ class ConnectBody(BaseModel):
     # The demo is deliberately sandbox-only.  Keeping this in the request makes
     # the safety boundary visible in both API responses and the UI.
     test_mode: bool = True
+    environment: str = Field(default="local_test", pattern="^(local_test|razorpay_test)$")
     secret_ref: str | None = Field(default=None, max_length=120)
     api_secret_ref: str | None = Field(default=None, max_length=120)
 
@@ -42,10 +44,15 @@ def _serialize(row: Integration) -> dict:
         "provider": row.provider,
         "status": row.status,
         "test_mode": row.status == "test_mode",
+        "environment": row.environment,
         "capabilities": row.capabilities or {},
         # Expose only the environment-variable *name*, never its value.
         "secret_ref": row.secret_ref,
         "api_secret_ref": row.api_secret_ref,
+        # This opaque route identifier is not a credential. It prevents a
+        # public webhook URL from exposing or trusting a merchant identifier.
+        "webhook_path": (f"/webhooks/{row.provider}/{row.webhook_route_token}"
+                         if row.webhook_route_token else None),
         "previous_secret_expires_at": (row.previous_secret_expires_at.isoformat()
                                         if row.previous_secret_expires_at else None),
         "last_webhook_at": row.last_webhook_at.isoformat() if row.last_webhook_at else None,
@@ -62,7 +69,7 @@ def list_integrations(p: Principal = Depends(current_principal),
         q = q.filter(Integration.merchant_id == scope)
     return {"integrations": [_serialize(row) for row in q.order_by(Integration.created_at).all()],
             "supported_providers": list(SUPPORTED_PROVIDERS),
-            "execution_boundary": "sandbox-only; real PSP execution remains disabled"}
+            "execution_boundary": "sandbox-only local and provider Test Mode; live PSP execution is disabled"}
 
 
 @router.post("")
@@ -100,6 +107,8 @@ def connect(body: ConnectBody, p: Principal = Depends(current_principal),
                           provider=provider)
         db.add(row)
     row.status = "test_mode"
+    row.environment = body.environment
+    row.webhook_route_token = row.webhook_route_token or secrets.token_urlsafe(32)
     row.secret_ref = body.secret_ref or row.secret_ref or default_ref
     row.api_secret_ref = body.api_secret_ref or row.api_secret_ref or default_api_ref
     row.capabilities = get_connector(provider).capabilities().as_dict()
@@ -108,9 +117,10 @@ def connect(body: ConnectBody, p: Principal = Depends(current_principal),
         db, p.organization_id, actor=p.user_id or f"{p.role}@{p.key_prefix}",
         actor_role=p.role, action_type="integration.connected",
         object_type="integration", object_id=row.id,
-        summary=f"{provider} Test Mode connected for {merchant.name}",
+        summary=f"{provider} {body.environment} connected for {merchant.name}",
         details={"merchant_id": merchant.id, "provider": provider,
-                 "test_mode": True, "capabilities": row.capabilities,
+                 "test_mode": True, "environment": row.environment,
+                 "capabilities": row.capabilities,
                  "secret_ref_configured": bool(row.secret_ref),
                  "api_secret_ref_configured": bool(row.api_secret_ref)},
     )
@@ -121,7 +131,9 @@ def connect(body: ConnectBody, p: Principal = Depends(current_principal),
 class RotateWebhookSecretBody(BaseModel):
     merchant_id: str
     secret_ref: str = Field(min_length=1, max_length=120)
-    grace_minutes: int = Field(default=60, ge=1, le=24 * 60)
+    # Razorpay can retry failed webhooks for up to 24h. Keep an overlap at
+    # least that long so a rotation does not turn a valid retry into a loss.
+    grace_minutes: int = Field(default=24 * 60, ge=24 * 60, le=16 * 24 * 60)
 
 
 @router.post("/webhook-secret/rotate")

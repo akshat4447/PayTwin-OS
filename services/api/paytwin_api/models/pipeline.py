@@ -28,11 +28,16 @@ class EventInbox(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("inb"))
     organization_id: Mapped[str] = mapped_column(
         String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str | None] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True, nullable=True)
     provider: Mapped[str] = mapped_column(String(30))
     external_event_id: Mapped[str] = mapped_column(String(200))
     signature_ok: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default="received")  # received|processed|duplicate|dead
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    # A PII-safe canonical envelope lets the worker materialize an accepted
+    # provider delivery after the HTTP acknowledgement has been returned.
+    canonical_payload: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

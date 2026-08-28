@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from paytwin_contracts import CanonicalEvent
 
-from paytwin_api.models import Fulfilment, Order, Payment, Refund
+from paytwin_api.models import CheckoutVerification, Fulfilment, Order, Payment, Refund
 
 # A payment failure or timeout is not necessarily terminal: some providers send a
 # late authorization, and a later capture/success is valid.  In contrast, a
@@ -320,12 +320,32 @@ def record_fulfilment(db: Session, payment: Payment, *, source: str,
              .with_for_update().one_or_none())
     if order is None or order.status != "paid":
         raise ValueError("cannot fulfil an unpaid order")
+    fulfilment_payment = payment
+    if payment.provider == "razorpay" and source == "razorpay_checkout":
+        # A captured webhook is not a browser Checkout proof. Require the
+        # server-side HMAC verification for this merchant order before the
+        # single irreversible business effect is recorded.
+        proof = (db.query(CheckoutVerification)
+                 .filter(CheckoutVerification.organization_id == payment.organization_id,
+                         CheckoutVerification.merchant_id == payment.merchant_id,
+                         CheckoutVerification.order_id == order.id,
+                         CheckoutVerification.provider == "razorpay",
+                         CheckoutVerification.signature_valid.is_(True),
+                         CheckoutVerification.status == "verified")
+                 .order_by(CheckoutVerification.verified_at.desc()).first())
+        if proof is None:
+            raise ValueError("cannot fulfil Razorpay order without verified Checkout proof")
+        if proof.payment_id:
+            verified_payment = db.query(Payment).filter(Payment.id == proof.payment_id).one_or_none()
+            if verified_payment is None or verified_payment.order_ref != order.order_ref:
+                raise ValueError("verified Checkout proof is not linked to this order payment")
+            fulfilment_payment = verified_payment
     existing = db.query(Fulfilment).filter(Fulfilment.order_id == order.id).one_or_none()
     if existing is not None:
         return existing
     row = Fulfilment(
         organization_id=payment.organization_id, merchant_id=payment.merchant_id,
-        order_id=order.id, payment_id=payment.id, source=source,
+        order_id=order.id, payment_id=fulfilment_payment.id, source=source,
         idempotency_key=idempotency_key,
     )
     db.add(row)

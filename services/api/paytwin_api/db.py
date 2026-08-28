@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import MetaData, create_engine
+from sqlalchemy import MetaData, create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from paytwin_api.config import get_settings
@@ -22,6 +22,15 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
+@event.listens_for(Session, "after_begin")
+def _apply_tenant_context(session, transaction, connection) -> None:
+    """Re-apply PostgreSQL RLS scope for every transaction in this session."""
+    org = session.info.get("paytwin.organization_id")
+    if org and connection.dialect.name == "postgresql":
+        connection.execute(text("SELECT set_config('app.current_org', :org, true)"),
+                           {"org": org})
+
+
 def make_engine(url: str | None = None):
     s = get_settings()
     url = url or s.database_url
@@ -32,6 +41,18 @@ def make_engine(url: str | None = None):
 
 def make_session_factory(engine) -> sessionmaker:
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, future=True)
+
+
+def set_tenant_context(session: Session, organization_id: str) -> None:
+    """Bind a request session to one org for PostgreSQL RLS.
+
+    ``SET LOCAL`` is transaction-scoped, so the session event above repeats it
+    after endpoint commits. SQLite intentionally remains a no-op for tests.
+    """
+    session.info["paytwin.organization_id"] = organization_id
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(text("SELECT set_config('app.current_org', :org, true)"),
+                        {"org": organization_id})
 
 
 @contextmanager

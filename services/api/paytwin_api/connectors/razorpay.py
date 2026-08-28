@@ -71,7 +71,10 @@ class RazorpayConnector(PaymentProviderConnector):
                 "psp": "razorpay",
                 "gateway": None,
             }
-            if method == "upi" and vpa:
+            # Existing Razorpay-shaped delivery evidence uses VPA for the
+            # intent cohort. Preserve that normalized cohort until a dedicated
+            # provider flow field is available on every emitted event.
+            if method == "upi" and (vpa or ent.get("flow") == "intent"):
                 cohort["method"] = "upi_intent"
             err = ent.get("error_description")
             # Razorpay delivers a DISTINCT event id per webhook delivery
@@ -84,7 +87,8 @@ class RazorpayConnector(PaymentProviderConnector):
             from paytwin_api.connectors.base import pseudonymize_ref
 
             event_payload = {
-                "failure_class": (ent.get("error_source") or err or "issuer_decline"),
+                "failure_class": (ent.get("error_reason") or ent.get("error_source")
+                                  or err or "issuer_decline"),
                 "latency_ms": None,
                 "customer_ref": pseudonymize_ref(
                     ent.get("customer_id"), get_settings().hash_salt),
@@ -93,6 +97,11 @@ class RazorpayConnector(PaymentProviderConnector):
                 "attempt_no": 1,
                 "group_id": ent.get("order_id") or payment_ref,
                 "source_event": raw,
+                "failure_detail": {
+                    "source": ent.get("error_source"), "code": ent.get("error_code"),
+                    "reason": ent.get("error_reason"), "step": ent.get("error_step"),
+                    "description": err,
+                },
             }
             if refund:
                 event_payload.update({
@@ -123,5 +132,12 @@ class RazorpayConnector(PaymentProviderConnector):
             raise WebhookRejected(f"malformed razorpay payload: {e}") from e
 
     def capabilities(self) -> Capabilities:
-        return Capabilities(payment_fetch=True, payment_link=True, downtime_feed=True,
-                            direct_retry=False, refund=True)
+        return Capabilities(
+            # The local environment implements fetch/refund against its own
+            # ledger. It does not pretend to expose Razorpay's account API or
+            # downtime feed until real credentials are configured.
+            payment_fetch=True, payment_link=False, downtime_feed=False,
+            direct_retry=False, refund=True,
+            notes={"payment_fetch": "local ledger only without provider credentials",
+                   "downtime_feed": "not configured; local health is derived from events"},
+        )

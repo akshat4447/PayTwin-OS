@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import time
-from collections import deque
+import uuid
+from collections import OrderedDict, deque
 from pathlib import Path
 
 from fastapi import FastAPI, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from paytwin_api import __version__
@@ -22,7 +24,72 @@ engine = make_engine()
 SessionLocal = make_session_factory(engine)
 
 app = FastAPI(title="PayTwin OS API", version=__version__,
-              docs_url="/api/docs", openapi_url="/api/openapi.json")
+              docs_url=None if settings.is_prod else "/api/docs",
+              openapi_url=None if settings.is_prod else "/api/openapi.json")
+
+
+class RequestMetrics:
+    """Small dependency-free Prometheus exposition for staging operations."""
+
+    def __init__(self):
+        self.requests = 0
+        self.errors = 0
+        self.duration_seconds = 0.0
+
+    def render(self) -> str:
+        return "\n".join([
+            "# HELP paytwin_http_requests_total Total HTTP requests handled",
+            "# TYPE paytwin_http_requests_total counter",
+            f"paytwin_http_requests_total {self.requests}",
+            "# HELP paytwin_http_errors_total HTTP responses with status >= 500",
+            "# TYPE paytwin_http_errors_total counter",
+            f"paytwin_http_errors_total {self.errors}",
+            "# HELP paytwin_http_request_duration_seconds_sum Aggregate request duration",
+            "# TYPE paytwin_http_request_duration_seconds_sum counter",
+            f"paytwin_http_request_duration_seconds_sum {self.duration_seconds:.6f}",
+            "",
+        ])
+
+
+metrics = RequestMetrics()
+
+
+class SecurityAndObservabilityMiddleware:
+    """Adds correlation/security headers without logging or retaining credentials."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        started = time.perf_counter()
+        supplied = next((v.decode() for k, v in scope.get("headers", [])
+                         if k.lower() == b"x-request-id"), "")
+        request_id = supplied if 8 <= len(supplied) <= 80 and supplied.replace("-", "").isalnum() \
+            else uuid.uuid4().hex
+
+        async def secured_send(message):
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers", []))
+                headers.extend([
+                    (b"x-request-id", request_id.encode()),
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"referrer-policy", b"no-referrer"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+                    (b"content-security-policy", b"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'"),
+                ])
+                status = int(message["status"])
+                metrics.requests += 1
+                if status >= 500:
+                    metrics.errors += 1
+                metrics.duration_seconds += max(0.0, time.perf_counter() - started)
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, secured_send)
 
 
 class RateLimitMiddleware:
@@ -36,7 +103,8 @@ class RateLimitMiddleware:
     def __init__(self, app, limit: int = 240):
         self.app = app
         self.limit = max(0, int(limit))
-        self._hits: dict[str, deque[float]] = {}
+        self._hits: OrderedDict[str, deque[float]] = OrderedDict()
+        self._max_identities = 10_000
 
     async def __call__(self, scope, receive, send):
         if (scope["type"] != "http" or self.limit <= 0
@@ -45,10 +113,21 @@ class RateLimitMiddleware:
             await self.app(scope, receive, send)
             return
         headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
-        ident = headers.get("authorization", "") or (
+        raw_ident = headers.get("authorization", "") or (
             scope.get("client", ("?", 0))[0] if scope.get("client") else "?")
+        # Do not retain bearer tokens in a long-lived in-process dict. A stable
+        # hash keeps the per-credential limiter behavior without credential
+        # exposure through memory inspection/debugging.
+        ident = hashlib.sha256(raw_ident.encode()).hexdigest()
         now = time.monotonic()
-        window = self._hits.setdefault(ident, deque())
+        window = self._hits.get(ident)
+        if window is None:
+            if len(self._hits) >= self._max_identities:
+                self._hits.popitem(last=False)
+            window = deque()
+            self._hits[ident] = window
+        else:
+            self._hits.move_to_end(ident)
         while window and window[0] <= now - 60.0:
             window.popleft()
         if len(window) >= self.limit:
@@ -65,6 +144,7 @@ class RateLimitMiddleware:
 
 
 app.add_middleware(RateLimitMiddleware, limit=settings.rate_limit_per_min)
+app.add_middleware(SecurityAndObservabilityMiddleware)
 
 
 @app.exception_handler(AuthError)
@@ -86,9 +166,26 @@ def health(db: Session = Depends(get_db)):
             "version": __version__, "env": settings.env}
 
 
+@app.get("/api/ready", tags=["system"])
+def readiness(db: Session = Depends(get_db)):
+    """Deployment readiness: database must be queryable before traffic is sent."""
+    from sqlalchemy import text
+
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "not_ready", "db": False})
+    return {"status": "ready", "db": True, "env": settings.env}
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics():
+    return PlainTextResponse(metrics.render(), media_type="text/plain; version=0.0.4")
+
+
 @app.get("/api/meta", tags=["system"])
 def meta(p: Principal = Depends(current_principal), db: Session = Depends(get_db)):
-    from paytwin_api.models import Merchant
+    from paytwin_api.models import Merchant, Organization
 
     merchants = (
         db.query(Merchant)
@@ -96,8 +193,10 @@ def meta(p: Principal = Depends(current_principal), db: Session = Depends(get_db
         .order_by(Merchant.created_at)
         .all()
     )
+    org = db.query(Organization).filter(Organization.id == p.organization_id).one_or_none()
     return {
         "org": p.organization_id,
+        "org_name": org.name if org is not None else p.organization_id,
         "role": p.role,
         "merchants": [
             {"id": m.id, "name": m.name, "short": m.short_code, "color": m.color,
@@ -130,6 +229,7 @@ from paytwin_api.routers.stream import router as stream_router  # noqa: E402
 from paytwin_api.routers.integrations import router as integrations_router  # noqa: E402
 from paytwin_api.routers.checkout import router as checkout_router  # noqa: E402
 from paytwin_api.routers.operations import router as operations_router  # noqa: E402
+from paytwin_api.routers.razorpay import router as razorpay_router  # noqa: E402
 from paytwin_api.reliability.router import router as reliability_router  # noqa: E402
 
 for _r in (overview_router, incidents_router, twin_router, policies_router,
@@ -137,6 +237,8 @@ for _r in (overview_router, incidents_router, twin_router, policies_router,
            reports_router, chaos_router, stream_router, integrations_router,
            checkout_router, operations_router, reliability_router):
     app.include_router(_r)
+
+app.include_router(razorpay_router)
 
 
 def _mount_web() -> None:

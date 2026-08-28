@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 
 from paytwin_api.auth import Principal
 from paytwin_api.deps import current_principal, err, get_db, require_write
-from paytwin_api.models import Merchant
+from paytwin_api.models import Merchant, Payment
 from paytwin_api.services import audit as audit_svc
 from paytwin_api.services.checkout_verification import verify_razorpay_checkout
+from paytwin_api.services.state_machine import record_fulfilment
 
 router = APIRouter(prefix="/api/checkout", tags=["checkout"])
 
@@ -19,6 +20,12 @@ class RazorpayVerifyBody(BaseModel):
     razorpay_order_id: str = Field(min_length=3, max_length=200)
     razorpay_payment_id: str = Field(min_length=3, max_length=200)
     razorpay_signature: str = Field(min_length=16, max_length=200)
+
+
+class FulfilBody(BaseModel):
+    merchant_id: str = Field(max_length=40)
+    razorpay_payment_id: str = Field(min_length=3, max_length=200)
+    idempotency_key: str = Field(min_length=8, max_length=80)
 
 
 @router.post("/razorpay/verify")
@@ -56,3 +63,33 @@ def verify_razorpay(body: RazorpayVerifyBody,
     payload = {"ok": result.ok, "code": result.code, "message": result.message,
                "verification_id": result.verification_id}
     return payload if status == 200 else err(status, result.code, result.message)
+
+
+@router.post("/razorpay/fulfil")
+def fulfil_razorpay(body: FulfilBody, p: Principal = Depends(current_principal),
+                     db: Session = Depends(get_db)):
+    """Record one merchant effect only after captured payment + Checkout proof."""
+    require_write(p)
+    payment = (db.query(Payment)
+               .filter(Payment.organization_id == p.organization_id,
+                       Payment.merchant_id == body.merchant_id,
+                       Payment.provider == "razorpay",
+                       Payment.payment_ref == body.razorpay_payment_id).one_or_none())
+    if payment is None:
+        return err(404, "not_found", "Razorpay payment")
+    try:
+        fulfilment = record_fulfilment(db, payment, source="razorpay_checkout",
+                                       idempotency_key=body.idempotency_key)
+    except ValueError as exc:
+        return err(422, "fulfilment_not_permitted", str(exc))
+    audit_svc.append_audit(
+        db, p.organization_id, actor=p.user_id or f"{p.role}@{p.key_prefix}",
+        actor_role=p.role, action_type="checkout.fulfilled",
+        object_type="fulfilment", object_id=fulfilment.id,
+        summary="Razorpay order fulfilment recorded after server-side proof",
+        details={"merchant_id": body.merchant_id,
+                 "payment_ref": body.razorpay_payment_id, "source": fulfilment.source},
+    )
+    db.commit()
+    return {"ok": True, "fulfilment_id": fulfilment.id,
+            "status": fulfilment.status, "payment_id": fulfilment.payment_id}

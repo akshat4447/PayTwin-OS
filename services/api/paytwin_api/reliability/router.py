@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..auth import Principal
+from ..config import get_settings
 from ..deps import current_principal, get_db, require_admin
-from ..models import Merchant
+from ..models import Merchant, ReliabilityRun
 from ..services import audit as audit_svc
 from . import packs, store
 from .engine import run_scenario
@@ -60,14 +61,28 @@ def _unknown_gate(reason: str) -> dict:
             "medium": 0, "reason": reason}
 
 
-def _runs_for_org(org_id: str) -> tuple[list[dict] | None, dict | None]:
-    """Return tenant evidence, or a gate that deliberately prevents release."""
+def _runs_for_org(db: Session, org_id: str) -> tuple[list[dict] | None, dict | None]:
+    """Return database evidence, with legacy JSON only as a dev-read fallback."""
     try:
-        return [r for r in store.load_runs() if r.get("org_id") == org_id], None
+        rows = (db.query(ReliabilityRun)
+                .filter(ReliabilityRun.organization_id == org_id)
+                .order_by(ReliabilityRun.created_at.desc()).limit(50).all())
+        if rows:
+            return [row.payload for row in rows], None
+        # Existing local artifacts remain readable during development upgrades,
+        # but a production release gate has only primary-database evidence.
+        if not get_settings().is_prod:
+            legacy = [r for r in store.load_runs() if r.get("org_id") == org_id]
+            if legacy:
+                return legacy, None
+        # No evidence for this tenant is a normal initial state, not an
+        # unavailable datastore. Callers render the explicit UNKNOWN/no-runs
+        # gate rather than a false infrastructure alarm.
+        return [], None
     except store.EvidenceMissing:
-        return None, _unknown_gate("no reliability evidence has been recorded")
+        return [], _unknown_gate("no reliability evidence has been recorded")
     except store.EvidenceStoreError:
-        return None, _unknown_gate("reliability evidence is unavailable or corrupt")
+        return [], _unknown_gate("legacy reliability evidence is unavailable or corrupt")
 
 
 def _execute_suite(suite: dict) -> tuple[list[dict], list[dict], bool]:
@@ -110,9 +125,10 @@ router = APIRouter(prefix="/api/reliability", tags=["reliability"])
 
 
 @router.get("/overview")
-def overview(p: Principal = Depends(current_principal)) -> dict:
+def overview(p: Principal = Depends(current_principal),
+             db: Session = Depends(get_db)) -> dict:
     suites = packs.all_suites()
-    mine, unavailable_gate = _runs_for_org(p.organization_id)
+    mine, unavailable_gate = _runs_for_org(db, p.organization_id)
     mine = mine or []
     last = mine[0] if mine else None
     return {"suites": len(suites),
@@ -194,10 +210,18 @@ def run(body: dict | None = None,
            "mode": "SANDBOX_RUNTIME" if merchant_id else "SANDBOX_FIXTURE",
            "seed": 20260825, "per_suite": per_suite, "checks": checks,
            "findings": findings, "gate": _gate(findings)}
-    try:
-        store.save_run(run)
-    except store.EvidenceStoreError as exc:
-        raise HTTPException(503, "could not persist reliability evidence") from exc
+    db.add(ReliabilityRun(
+        run_id=run["run_id"], organization_id=p.organization_id, mode=run["mode"],
+        gate_verdict=run["gate"]["verdict"], gate_score=run["gate"]["score"],
+        payload=run,
+    ))
+    # A local JSON artifact remains a best-effort convenience for old dev
+    # workflows. The DB row above is the release-gate source of truth.
+    if not get_settings().is_prod:
+        try:
+            store.save_run(run)
+        except store.EvidenceStoreError:
+            pass
     audit_svc.append_audit(
         db, p.organization_id, actor=p.user_id or f"{p.role}@{p.key_prefix}",
         actor_role=p.role, action_type="reliability.run", object_type="reliability_run",
@@ -210,8 +234,9 @@ def run(body: dict | None = None,
 
 
 @router.get("/runs")
-def runs(p: Principal = Depends(current_principal)) -> dict:
-    mine, unavailable_gate = _runs_for_org(p.organization_id)
+def runs(p: Principal = Depends(current_principal),
+         db: Session = Depends(get_db)) -> dict:
+    mine, unavailable_gate = _runs_for_org(db, p.organization_id)
     if unavailable_gate:
         return {"runs": [], "gate": unavailable_gate}
     mine = mine or []
@@ -221,19 +246,26 @@ def runs(p: Principal = Depends(current_principal)) -> dict:
 
 
 @router.get("/runs/{run_id}")
-def get_run(run_id: str, p: Principal = Depends(current_principal)) -> dict:
-    try:
-        r = store.get_run(run_id)
-    except store.EvidenceStoreError:
-        raise HTTPException(503, "reliability evidence is unavailable")
+def get_run(run_id: str, p: Principal = Depends(current_principal),
+            db: Session = Depends(get_db)) -> dict:
+    row = (db.query(ReliabilityRun)
+           .filter(ReliabilityRun.organization_id == p.organization_id,
+                   ReliabilityRun.run_id == run_id).one_or_none())
+    r = row.payload if row is not None else None
+    if r is None and not get_settings().is_prod:
+        try:
+            r = store.get_run(run_id)
+        except store.EvidenceStoreError:
+            r = None
     if not r or r.get("org_id") != p.organization_id:
         raise HTTPException(404, "run not found")
     return r
 
 
 @router.get("/findings")
-def findings(p: Principal = Depends(current_principal)) -> dict:
-    mine, unavailable_gate = _runs_for_org(p.organization_id)
+def findings(p: Principal = Depends(current_principal),
+             db: Session = Depends(get_db)) -> dict:
+    mine, unavailable_gate = _runs_for_org(db, p.organization_id)
     if unavailable_gate:
         return {"findings": [], "count": 0, "gate": unavailable_gate}
     mine = mine or []
@@ -242,8 +274,9 @@ def findings(p: Principal = Depends(current_principal)) -> dict:
 
 
 @router.get("/release-gate")
-def release_gate(p: Principal = Depends(current_principal)) -> dict:
-    runs, unavailable_gate = _runs_for_org(p.organization_id)
+def release_gate(p: Principal = Depends(current_principal),
+                 db: Session = Depends(get_db)) -> dict:
+    runs, unavailable_gate = _runs_for_org(db, p.organization_id)
     if unavailable_gate:
         return {"org_id": p.organization_id, **unavailable_gate,
                 "basis": "reliability evidence unavailable"}

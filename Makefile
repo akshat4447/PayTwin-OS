@@ -48,7 +48,7 @@ demo:
 	PAYTWIN_DEMO_RESET=$${PAYTWIN_DEMO_RESET:-0} PAYTWIN_SEED=$${PAYTWIN_SEED:-42} \
 	PAYTWIN_DATABASE_URL=$${PAYTWIN_DEMO_URL:-sqlite:///$(CURDIR)/data/demo.db} \
 		$(PY) -m paytwin_sim.demo
-	@echo "DEMO_RUN.md written. Open http://localhost:8000/?key=<risk_admin key printed above>"
+	@echo "DEMO_RUN.md written. Open http://localhost:8000/#key=<risk_admin key printed above>"
 
 razorpay-demo:
 	PAYTWIN_DEMO_RESET=1 PAYTWIN_DEMO_HOURS=$${PAYTWIN_DEMO_HOURS:-1.5} PAYTWIN_SEED=$${PAYTWIN_SEED:-42} \

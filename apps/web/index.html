@@ -345,11 +345,11 @@ const INC=[
   cands:[{a:'Flag release owner',ev:2100,st:'proposed'},{a:'Nudge abandoned carts',ev:3400,st:''}],
   budget:{att:0,max:2,bud:0,bmax:8000,win:0,wmax:45}}];
 /* ================= STATE + LIVE ENGINE ================= */
-const S={page:'overview',theme:'dark',env:'demo',scope:'org',inc:0,chaos:false,chat:[],simRun:null,paletteIdx:0,notifs:[],auditN:4098,prot:184000,rec:0};
-/* The default experience is a seeded simulator demo. A connected API is always
-   presented as Test Mode: this UI never represents a production payment rail. */
-function demoModeLabel(){return window.__PTW_LIVE?(S.env==='simulation'?'TEST MODE · SIMULATION SANDBOX':'TEST MODE · API CONNECTED'):(S.env==='simulation'?'SIMULATION · SANDBOX':'DEMO · SIMULATED')}
-function telemetryModeLabel(){return window.__PTW_LIVE?'TEST API feed':'SIMULATED feed'}
+const S={page:'overview',theme:'dark',env:'preview',scope:'org',inc:0,chaos:false,chat:[],simRun:null,paletteIdx:0,notifs:[],auditN:4098,prot:184000,rec:0};
+/* A connected API is an explicitly-labelled local/Test workspace. Preview data
+   is never presented as a live payment rail. */
+function demoModeLabel(){return window.__PTW_LIVE?(S.env==='simulation'?'TEST ENVIRONMENT · SIMULATION':'LOCAL TEST ENVIRONMENT · CONNECTED'):(S.env==='simulation'?'SIMULATION · PREVIEW':'WORKSPACE PREVIEW · SEEDED DATA')}
+function telemetryModeLabel(){return window.__PTW_LIVE?'Connected event feed':'Seeded event feed'}
 const series={};ORG.merchants.forEach(k=>{const r=mulberry(42+k.length);series[k]=Array.from({length:48},(_,i)=>MERCH[k].srBase+Math.sin(i/6)*.5+(r()-.5)*.8)});
 function scopeM(){return S.scope==='org'?null:MERCH[S.scope]}
 function scopeName(){return S.scope==='org'?ORG.name+' · All merchants':MERCH[S.scope].name}
@@ -363,7 +363,7 @@ function renderNotifs(){const b=$('.iconbtn .ping');if(b&&!S.notifs.length)b.rem
 function audit(action,obj){S.auditN++;AUD.unshift({id:'DEC-'+S.auditN,t:nowT(),actor:S.page==='commander'?'agent':'system',action,st:'Logged',tone:'mut'});if(AUD.length>14)AUD.pop();if(obj)notify('Audit',action)}
 let tickN=0,syncAgo=7;
 setInterval(()=>{tickN++;syncAgo++;if(syncAgo>15)syncAgo=Math.floor(Math.random()*4)+1;
- if(!window.__PTW_LIVE){ // synthetic telemetry is DEMO-engine only; LIVE uses /api/stream
+ if(!window.__PTW_LIVE){ // preview telemetry is local-only; connected mode uses /api/stream
   // live SR series drift
   ORG.merchants.forEach(k=>{const arr=series[k],r=Math.random(),base=MERCH[k].srBase;let nx=arr[arr.length-1]+(r-.5)*.5;const inc=INC.find(i=>i.merch===k&&['P1','P2'].includes(i.sev)&&i.state!=='RESOLVED');if(inc)nx-=inc.sev==='P1'?3.2:1.1;arr.push(Math.max(base-6,Math.min(base+1,nx)));if(arr.length>60)arr.shift()});
   // risk decay on mitigating incidents
@@ -483,10 +483,10 @@ function pgTour(){const stages=[
  ['Simulate','Rehearse bounded recovery choices with a deterministic Digital Twin before any test action.','twinlab','Run Twin','twin'],
  ['Govern','Apply typed merchant policies and human approval gates; policy—not an LLM—has final authority.','policies','Review policies','law'],
  ['Assure','Run modeled lifecycle, webhook, and invariant checks in Reliability Lab before a release.','reliability','Open Reliability Lab','shield']];
- return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('spark',13)+' HACKATHON DEMO TOUR</p><h1>From payment signal to safe action.</h1><p class="sub">A concise walkthrough of PayTwin\u2019s closed loop: observe, detect, diagnose, simulate, govern, and assure.</p></div><div class="toolbar"><span class="pill acc">Razorpay Test Mode</span><button class="btn pr" data-act="nav" data-p="overview">Start at command center</button></div></div>'+
+ return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('spark',13)+' PAYMENT OPERATIONS TOUR</p><h1>From payment signal to safe action.</h1><p class="sub">A concise walkthrough of PayTwin\u2019s closed loop: observe, detect, diagnose, simulate, govern, and assure.</p></div><div class="toolbar"><span class="pill acc">Local Razorpay Test Environment</span><button class="btn pr" data-act="nav" data-p="overview">Start at command center</button></div></div>'+
  '<div class="banner ok"><span class="ic">'+ic('shield',18)+'</span><div><b>Demo safety boundary.</b><p>Seeded simulator data and Razorpay Test Mode semantics only. No production PSP credentials, live money movement, or production release decision is represented here.</p></div></div>'+
  '<div class="grid3">'+stages.map(s=>'<div class="card"><div class="hd"><span class="chip">'+ic(s[4],14)+' '+s[0]+'</span><button class="lk" data-act="nav" data-p="'+s[2]+'">'+s[3]+' \u2192</button></div><p style="color:var(--mut);font-size:12.5px;line-height:1.65">'+s[1]+'</p></div>').join('')+'</div>'+
- '<div class="grid2"><div class="card"><div class="hd"><h2>Suggested demo path</h2><span class="pill mut">~3 minutes</span></div><div class="code">1. Cohort Matrix → observe the HDFC × UPI deviation\n2. War Room → review evidence and policy boundary\n3. Twin Lab → compare a bounded recovery option\n4. Reliability Lab → run the release assurance pack</div></div><div class="card"><div class="hd"><h2>Evidence vocabulary</h2></div><p style="color:var(--mut);font-size:12.5px;line-height:1.7">Demo charts are <b>SIMULATED</b>. Connected local API data is labeled <b>TEST MODE · API CONNECTED</b>. Provider requirements and PayTwin invariants remain visibly distinct in Reliability Lab.</p></div></div></div>'}
+ '<div class="grid2"><div class="card"><div class="hd"><h2>Suggested review path</h2><span class="pill mut">~3 minutes</span></div><div class="code">1. Cohort Matrix → observe the HDFC × UPI deviation\n2. War Room → review evidence and policy boundary\n3. Twin Lab → compare a bounded recovery option\n4. Reliability Lab → run the release assurance pack</div></div><div class="card"><div class="hd"><h2>Evidence vocabulary</h2></div><p style="color:var(--mut);font-size:12.5px;line-height:1.7">Preview charts are <b>SIMULATED</b>. Connected local API data is labeled <b>LOCAL TEST ENVIRONMENT</b>. Provider requirements and PayTwin invariants remain visibly distinct in Reliability Lab.</p></div></div></div>'}
 function streamRows(){return STREAM.map(s=>'<div><span style="color:var(--dim)">'+s.t+'</span> <span class="chip">'+MERCH[s.m].short+'</span> '+esc(s.x)+'</div>').join('')||'<div style="color:var(--dim)">waiting for events\u2026</div>'}
 function metric(t,v,d,tone,bars){var up=d.startsWith('+')||d.startsWith('✓')||tone==='g';return '<div class="card metric"><div class="mlbl">'+t+'</div><strong class="num">'+v+'</strong><div class="mrow"><span class="delta '+(up?'good':'bad')+'">'+d+'</span><div class="bars '+(tone==='p'?'p':tone==='g'?'g':tone==='a'?'a':'')+'">'+bars.map(h=>'<i style="height:'+h+'%"></i>').join('')+'</div></div></div>'}
 function pgTwin(){S.alloc=S.alloc||18;S.dur=S.dur||18;S.scen=S.scen||'reroute_psp';
@@ -559,7 +559,7 @@ function pgReliability(){
  const head='<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('shield',13)+' PAYMENT RELIABILITY &amp; INTEGRATION ASSURANCE</p><h1>Reliability Lab</h1><p class="sub">Prove your payment integration behaves correctly under real lifecycle failures — duplicate deliveries, forged callbacks, out-of-order events, refund overruns, agent mandate replays — <b>before</b> production finds them for you.</p></div>'+
  '<div class="toolbar"><button class="btn" data-act="relwh" data-k="duplicate">'+ic('zap',14)+' Webhook Lab · duplicate</button><button class="btn" data-act="relrun" data-runtime="1">Run sandbox runtime</button><button class="btn pr'+(R.running?' is-loading':'')+'" data-act="relrun">'+ic('play',14)+' Run verification</button></div></div>';
  if(R.loading)return head+'<div class="card">'+Array(4).fill('<div class="skel" style="height:26px;margin-bottom:10px"></div>').join('')+'</div>';
- if(!R.live&&!R.ov)return head+'<div class="card"><div class="empty">'+illShield()+'<p><b>Connect the PayTwin Test Mode API to activate the lab.</b><br>Open this page with <span class="chip">?key=&lt;risk_admin key&gt;</span> — the same in-memory API session powers every page.</p><button class="btn pr" style="margin-top:10px" data-act="palette">Open command palette</button></div></div>';
+ if(!R.live&&!R.ov)return head+'<div class="card"><div class="empty">'+illShield()+'<p><b>Connect the local Test Mode API to activate the lab.</b><br>Select the environment chip and paste a workspace key; it stays only in this browser tab.</p><button class="btn pr" style="margin-top:10px" data-act="connectApi">Connect workspace</button></div></div>';
  const ov=R.ov||{},g=ov.gate||{verdict:'—',score:0,critical:0,high:0,medium:0};
  const gcls=g.verdict==='READY'?'ok':g.verdict==='BLOCKED'?'':'';
  const gicon=g.verdict==='READY'?'check':g.verdict==='BLOCKED'?'flame':'alert';
@@ -588,7 +588,7 @@ function pgExp(){return '<div class="pagegrid"><div class="trow"><div><p class="
 function batchReport(){const L=[];L.push('# PayTwin OS \u2014 Recovery Batch Report');L.push('_Window: month-to-date \u00b7 Scope: '+(S.scope==='org'?ORG.name:MERCH[S.scope].name)+'_');L.push('');
  L.push('## Headline');L.push('- Incremental GMV recovered (causal): **\u20b94,32,000**');L.push('- Treatment recovered: \u20b918.6L vs matched control \u20b914.28L');L.push('- 95% CI on lift: [+5.6 pp, +11.2 pp] \u2014 excludes zero');L.push('- Futile retries suppressed: **34%** (EV below cost threshold)');L.push('- Policy violations: **0** across all executed actions');L.push('');
  L.push('## Batch detail');L.push('| Cohort | n_treat | n_ctrl | Recovery T/C | Incremental |');L.push('|---|---|---|---|---|');L.push('| UPI soft declines (Grocery) | 4,120 | 4,096 | 18.6% / 13.4% | \u20b92.14L |');L.push('| Mandate debits (Subscriptions) | 2,380 | 2,372 | 93.9% / 91.8% | \u20b90.96L |');L.push('| INC-2481 bounded reroute | 812 | 796 | live guardrail | \u20b91.22L |');L.push('');
- L.push('## Compliance');L.push('- Escalations within consent budgets: 100%');L.push('- DND-window contacts blocked: 2 (logged DEC-4096)');L.push('- Stopping rules fired: 3 (all before budget breach)');L.push('');L.push('_Generated by PayTwin OS prototype \u00b7 '+new Date().toISOString()+' \u00b7 reproduce via `make bench`_');
+ L.push('## Compliance');L.push('- Escalations within consent budgets: 100%');L.push('- DND-window contacts blocked: 2 (logged DEC-4096)');L.push('- Stopping rules fired: 3 (all before budget breach)');L.push('');L.push('_Generated by PayTwin OS workspace \u00b7 '+new Date().toISOString()+' \u00b7 reproduce via `make bench`_');
  dl('paytwin-recovery-batch-report.md',L.join('\n'),'text/markdown');toast('Recovery Batch Report downloaded');audit('export.batch_report')}
 function pgModel(){return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('pulse',13)+' MLOPS CONTROL PLANE</p><h1>Model health</h1><p class="sub">Every autonomous decision traces to a versioned model here. Metrics come from PayTwin-Bench runs — nothing decorative.</p></div><div class="toolbar"><button class="btn" data-act="nav" data-p="bench">View benchmark</button><button class="btn pr" data-act="toastOp">Export model cards</button></div></div>'+
  '<div class="grid21"><div class="card"><div class="hd"><h2>Registry</h2><span class="pill grn">\u2713 bench-linked</span></div>'+
@@ -642,7 +642,7 @@ document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if
  else if(act==='palette')openPal();else if(act==='pclose')closePal();
  else if(act==='palgo'){const r=palRes[+el.dataset.i];closePal();if(r)r.go()}
  else if(act==='notifs')toast(S.notifs.length?S.notifs.length+' recent events \u2014 all chains verified':'No new notifications. Chains verified.');
- else if(act==='envtoggle'){S.env=S.env==='simulation'?'demo':'simulation';render();toast(S.env==='simulation'?'Simulation sandbox enabled':'Demo mode · simulated dataset')}
+ else if(act==='envtoggle'){S.env=S.env==='simulation'?'preview':'simulation';render();toast(S.env==='simulation'?'Simulation sandbox enabled':'Workspace preview restored')}
  else if(act==='chaos'){S.chaosOpen=!S.chaosOpen;$('.chaos').classList.toggle('open')}
  else if(act==='inject')inject(k);
  else if(act==='orgmenu'){S.scope=S.scope==='org'?'mgro':'org';render();toast('Scope: '+scopeName())}
@@ -670,9 +670,9 @@ document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if
  else if(act==='toastOp')toast('Prototype view · connect the test API for the backed flow');
  else if(act==='replay')toast('DEC-4098 replayed read-only \u2014 identical output \u2713 deterministic');
  else if(act==='llmDrill'){S.llmDown=true;render();toast('LLM offline \u2192 deterministic fallback engaged');setTimeout(()=>{S.llmDown=false;if(S.page==='commander')render()},6000)}
- else toast('Wired to the working backend in Milestone 2 \u2014 interaction shown as designed')});
+ else toast('This action is unavailable in workspace preview; connect the local Test Mode API to run it.')});
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPal()}if(e.key==='Escape'){closePal();$$('.overlay').forEach(x=>x.remove())}});
-const PAGES={tour:['Demo Tour','spark'],overview:['Command Center','pulse'],cohort:['Cohort Matrix','filter'],warroom:['Incident War Room','alert'],twinlab:['Twin Lab','twin'],policies:['Policies','law'],commander:['AI Commander','bot'],experiments:['Experiments & Recovery','chart'],modelhealth:['Model Health','pulse'],audit:['Audit Explorer','audit'],integrations:['Integrations','plug'],merchants:['Merchants','users'],funnel:['Checkout Funnel','route'],bench:['Benchmark','spark'],reliability:['Reliability Lab','shield']};
+const PAGES={tour:['Product Tour','spark'],overview:['Command Center','pulse'],cohort:['Cohort Matrix','filter'],warroom:['Incident War Room','alert'],twinlab:['Twin Lab','twin'],policies:['Policies','law'],commander:['AI Commander','bot'],experiments:['Experiments & Recovery','chart'],modelhealth:['Model Health','pulse'],audit:['Audit Explorer','audit'],integrations:['Integrations','plug'],merchants:['Merchants','users'],funnel:['Checkout Funnel','route'],bench:['Benchmark','spark'],reliability:['Reliability Lab','shield']};
 const NAV=[['Start here',['tour']],['Command center',['overview','cohort','warroom']],['Intelligence',['twinlab','policies','commander','experiments','modelhealth']],['Platform',['merchants','funnel','integrations','audit','bench']],['Reliability',['reliability']]];
 let pageTick=null;
 function render(){document.body.className=S.env==='simulation'?'sim':'';let mount=$('#app');if(!mount){mount=document.createElement('div');mount.id='app';document.body.appendChild(mount)}
@@ -682,8 +682,8 @@ function render(){document.body.className=S.env==='simulation'?'sim':'';let moun
  '<button class="wsbtn" data-act="orgmenu"><span class="wslogo">N</span><div class="wsmeta"><b>'+esc(S.scope==='org'?ORG.name:MERCH[S.scope].name)+'</b><small>'+(S.scope==='org'?'Organization \u00b7 all merchants':MERCH[S.scope].mode.split(' \u00b7 ')[0])+'</small></div><span class="chev">'+ic('chev',14)+'</span></button>'+
  '<nav class="nav">'+NAV.map(g=>'<p class="grp">'+g[0]+'</p>'+g[1].map(p=>'<button class="item'+(S.page===p?' on':'')+'" data-act="nav" data-p="'+p+'">'+ic(PAGES[p][1],16)+'<span class="lbl">'+PAGES[p][0]+'</span>'+(p==='warroom'&&activeInc().length?'<span class="dot"></span>':'')+'</button>').join('')).join('')+'</nav>'+
  '<div class="sidefoot"><button class="mini" data-act="toastOp">'+ic('check',14)+'<span>All systems monitored</span></button><div class="userchip"><span class="av">AK</span><div class="ucmeta"><b>Akshat Kumar</b><small>Owner</small></div></div></div></aside>'+
- '<div class="mainwrap"><header class="topbar"><button class="iconbtn" data-act="theme" aria-label="toggle theme">'+ic(S.theme==='dark'?'sun':'moon',16)+'</button><button class="searchbtn" data-act="palette">'+ic('search',14)+'<span>Search or jump\u2026</span><kbd>\u2318K</kbd></button><div class="right"><button class="iconbtn" data-act="notifs" aria-label="notifications">'+ic('bell',16)+(S.notifs.length?'<span class="ping"></span>':'')+'</button><button class="envpill" data-act="envtoggle" aria-label="'+demoModeLabel()+'"><span class="dot"></span>'+demoModeLabel()+'</button></div></header>'+
- '<div class="statusstrip"><span class="'+(window.__PTW_LIVE?'ok':'amb')+'">'+(window.__PTW_LIVE?'● test API connected':'● simulator dataset')+'</span><span>\u00b7</span><span>'+(window.__PTW_LIVE?'ingest lag <b class="num" data-live="lag">18ms</b>':'deterministic seeded feed')+'</span><span>\u00b7</span><span>models: 7 benched</span><span>\u00b7</span><span class="'+(activeInc().length?'warn':'ok')+'">'+'\u25CF '+activeInc().length+' active incident(s)</span><span style="margin-left:auto" class="mono" data-live="clock">'+nowT()+' IST</span></div>'+
+ '<div class="mainwrap"><header class="topbar"><button class="iconbtn" data-act="theme" aria-label="toggle theme">'+ic(S.theme==='dark'?'sun':'moon',16)+'</button><button class="searchbtn" data-act="palette">'+ic('search',14)+'<span>Search or jump\u2026</span><kbd>\u2318K</kbd></button><div class="right"><button class="iconbtn" data-act="notifs" aria-label="notifications">'+ic('bell',16)+(S.notifs.length?'<span class="ping"></span>':'')+'</button><button class="envpill" data-act="connectApi" aria-label="'+demoModeLabel()+'"><span class="dot"></span>'+demoModeLabel()+'</button></div></header>'+
+ '<div class="statusstrip"><span class="'+(window.__PTW_LIVE?'ok':'amb')+'">'+(window.__PTW_LIVE?'● local Test Mode connected':'● seeded preview data')+'</span><span>\u00b7</span><span>'+(window.__PTW_LIVE?'ingest lag <b class="num" data-live="lag">18ms</b>':'deterministic preview feed')+'</span><span>\u00b7</span><span>models: 7 benched</span><span>\u00b7</span><span class="'+(activeInc().length?'warn':'ok')+'">'+'\u25CF '+activeInc().length+' active incident(s)</span><span style="margin-left:auto" class="mono" data-live="clock">'+nowT()+' IST</span></div>'+
  '<article class="page">'+pgf()+'</article></div></div>'+
  '<div class="fab" data-act="chaos" title="Chaos console">'+ic('flame',20)+'</div><div class="chaos'+(S.chaosOpen?' open':'')+'"><h4>Chaos console<button style="color:var(--dim)" data-act="chaos">'+ic('x',13)+'</button></h4>'+
  [['psp','Inject PSP degradation'],['issuer','Escalate INC-2482 latency'],['llm','Kill LLM \u2192 fallback drill']].map(c=>'<button class="ci" data-act="inject" data-k="'+c[0]+'">'+c[1]+'</button>').join('')+'<small style="color:var(--dim);font-size:10.5px;display:block;margin-top:2px">Deterministic scenarios \u2014 same seeds as PayTwin-Bench.</small></div>'+
@@ -739,13 +739,15 @@ render();
 (function(){
 'use strict';
 var qs=new URLSearchParams(location.search);
+var hashKey=(location.hash.match(/^#key=([^&]+)/)||[])[1]||'';
 /* Key handling: read once into memory, then scrub surfaces.
-   - ?key= is stripped from the URL (browser history) immediately
+   - #key= is preferred because URL fragments are not sent to the server
+   - legacy ?key= is stripped from browser history immediately
    - localStorage is cleared (legacy migration) and never re-written
    - the key lives only in this closure for the page's lifetime */
-var KEY=qs.get('key')||'';
+var KEY=hashKey?decodeURIComponent(hashKey):qs.get('key')||'';
 try{localStorage.removeItem('paytwin_api_key')}catch(e){}
-if(qs.get('key')){try{history.replaceState(null,'',location.pathname+location.hash)}catch(e){}}
+if(qs.get('key')||hashKey){try{history.replaceState(null,'',location.pathname)}catch(e){}}
 var H=KEY?{'Authorization':'Bearer '+KEY}:{};
 var LIVE=false;
 
@@ -831,6 +833,17 @@ function refresh(){
      ids.forEach(function(k){
        series[k]=(ov.pulse||[]).map(function(bp){return bp/100})});
      render();}).catch(function(){})}
+
+function loadConnectedSurfaces(){
+  var scopeQ=(S.scope&&S.scope!=='org')?'?scope='+encodeURIComponent(S.scope):'';
+  Promise.all([api('/api/funnel'+scopeQ),api('/api/healthmap'+scopeQ),
+    api('/api/merchants'),api('/api/audit?limit=30'+(scopeQ?'&scope='+encodeURIComponent(S.scope):'')),
+    api('/api/experiments'+scopeQ),api('/api/integrations'),
+    api('/api/operations/status'),api('/api/razorpay/environment')])
+   .then(function(rs){S.apiSurfaces={funnel:rs[0],healthmap:rs[1],merchants:rs[2],
+     audit:rs[3],experiments:rs[4],integrations:rs[5],operations:rs[6],
+     providerEnvironment:rs[7]};render()})
+   .catch(function(){/* core command-center remains usable if an auxiliary view is unavailable */})}
 
 /* Escape-then-format Markdown: hostile API/LLM output can never inject HTML. */
 function mdSafe(s){s=String(s==null?'':s);
@@ -968,7 +981,7 @@ function badge(){var el=document.querySelector('.envpill');if(!el)return;
   if(!chip){chip=document.createElement('span');chip.id='livechip';
     chip.style.cssText='margin-left:6px;font-size:9px;letter-spacing:1px;font-weight:700';
     el.appendChild(chip)}
-  chip.textContent=LIVE?'· TEST API':'· DEMO';
+  chip.textContent=LIVE?'· LOCAL TEST API':'· PREVIEW';
   chip.style.color=LIVE?'#3ecf8e':'#f5a524';}
 var _render=render;
 window.render=function(){_render();badge()};
@@ -978,14 +991,120 @@ if(KEY){
     api('/api/models')]).then(function(rs){
     LIVE=true;window.__PTW_LIVE=true;
     hydrate(rs[0],rs[1],rs[2],rs[3],rs[4],rs[5]);
-    render();setInterval(refresh,5000);startStream();
-    toast('TEST MODE · connected to PayTwin OS API');
+    render();loadConnectedSurfaces();setInterval(refresh,5000);startStream();
+    toast('Local Test Mode connected to PayTwin OS API');
   }).catch(function(){LIVE=false;render();
-    toast('DEMO · API unreachable - local engine engaged');});
+    toast('Connection unavailable — preview data is not a live feed');});
 }else{
   setTimeout(function(){LIVE=false;render();
-    toast('DEMO · add ?key=... to connect the Test Mode API');},400);
+    toast('Workspace preview — select the environment chip to connect');},400);
 }
+})();
+</script>
+<script id="local-razorpay-ui">
+/* ===== Credential-free local Razorpay Test Mode controls ===== */
+(function(){
+'use strict';
+function api(path,opt){
+  if(!window.__paytwinApi||!window.__paytwinHasAuth){
+    return Promise.reject(new Error('workspace key required'));
+  }
+  return window.__paytwinApi(path,opt);
+}
+function state(){if(!S.localRzp)S.localRzp={};return S.localRzp}
+function money(v){return Math.max(100,Math.round(Number(v)||10000))}
+function providerScreen(){
+  var x=state(), selected=S.scope!=='org'?S.scope:(ORG.merchants[0]||'mgro');
+  var connected=!!window.__PTW_LIVE;
+  var order=x.order, payment=x.payment, callback=x.callback;
+  return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('plug',13)+' PROVIDER ENVIRONMENT</p><h1>Razorpay local Test Mode</h1><p class="sub">Run a complete Razorpay-shaped payment lifecycle locally: order, signed webhook, server-side Checkout proof, one fulfilment, and refund. No Razorpay account, credentials, public URL, or network call is required.</p></div><div class="toolbar">'+(connected?'<span class="pill grn">Workspace connected</span>':'<button class="btn pr" data-act="connectApi">Connect workspace</button>')+'</div></div>'+
+  '<div class="banner ok"><span class="ic">'+ic('shield',18)+'</span><div><b>Local provider boundary · data provenance: LOCAL_RAZORPAY_TEST.</b><p>Every generated callback is HMAC-signed and enters the same inbox, state-machine, audit, Checkout-verification, and refund paths as an integration delivery.</p></div></div>'+
+  (connected?'<div class="grid2"><div class="card"><div class="hd"><h2>1 · Create local order</h2><span class="pill acc">INR</span></div><label style="display:block;font-size:12px;color:var(--mut);margin-bottom:6px">Amount (paise)</label><input id="rzpLocalAmount" value="'+(order?order.amount:12500)+'" inputmode="numeric" style="width:100%;margin-bottom:10px"><button class="btn pr" data-act="localOrder">Create order</button>'+(order?'<div class="code" style="margin-top:12px">order_id: '+esc(order.id)+'\nstatus: '+esc(order.status)+'\nreceipt: '+esc(order.receipt||'—')+'</div>':'')+'</div>'+
+  '<div class="card"><div class="hd"><h2>2 · Generate signed payment webhook</h2><span class="pill '+(payment?'grn':'mut')+'">'+(payment?'received':'awaiting order')+'</span></div><p style="font-size:12px;color:var(--mut);margin-bottom:10px">Capture is generated locally and materialized through the verified provider webhook path.</p><button class="btn pr" data-act="localCapture" '+(order?'':'disabled')+'>Capture local payment</button>'+(payment?'<div class="code" style="margin-top:12px">payment_id: '+esc(payment.id)+'\nstatus: '+esc(payment.status)+'\nwebhook: verified + materialized</div>':'')+'</div>'+
+  '<div class="card"><div class="hd"><h2>3 · Verify then fulfil</h2><span class="pill '+(x.verified?'grn':'mut')+'">'+(x.fulfilled?'fulfilled':x.verified?'verified':'awaiting payment')+'</span></div><p style="font-size:12px;color:var(--mut);margin-bottom:10px">The server verifies the Checkout HMAC and captured order before allowing one business effect.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="localVerify" '+(callback?'':'disabled')+'>Verify Checkout</button><button class="btn pr" data-act="localFulfil" '+(x.verified&&!x.fulfilled?'':'disabled')+'>Record fulfilment</button></div></div>'+
+  '<div class="card"><div class="hd"><h2>4 · Process refund</h2><span class="pill '+(x.refund?'grn':'mut')+'">'+(x.refund?'processed':'optional')+'</span></div><p style="font-size:12px;color:var(--mut);margin-bottom:10px">Runs the same refund accounting guardrails, including partial-refund limits.</p><button class="btn" data-act="localRefund" '+(payment&&!x.refund?'':'disabled')+'>Refund ₹25</button>'+(x.refund?'<div class="code" style="margin-top:12px">refund_id: '+esc(x.refund)+'\nstatus: processed</div>':'')+'</div></div>':'<div class="card"><div class="empty"><p>Connect a workspace key to run the local provider lifecycle. The key remains only in this browser tab and is supplied through a URL fragment, never query parameters or storage.</p></div></div>')+
+  '<div class="card"><div class="hd"><h2>What this environment validates</h2></div><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip">order identity</span><span class="chip">raw-body HMAC</span><span class="chip">durable inbox</span><span class="chip">event idempotency</span><span class="chip">payment state</span><span class="chip">Checkout HMAC</span><span class="chip">one fulfilment</span><span class="chip">refund limits</span><span class="chip">audit trail</span></div></div></div>';
+}
+var baseIntegration=pgInt;
+pgInt=function(){return providerScreen()};
+function liveOnly(title, description, inner){
+  return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('pulse',13)+' CONNECTED WORKSPACE DATA</p><h1>'+title+'</h1><p class="sub">'+description+'</p></div><div class="toolbar"><span class="pill grn">API-backed</span></div></div>'+inner+'</div>';
+}
+var previewFunnel=pgFunnel,previewCohort=pgCohort,previewMerchants=pgMerchants,
+    previewAudit=pgAudit,previewExperiments=pgExp;
+pgFunnel=function(){
+  var d=S.apiSurfaces&&S.apiSurfaces.funnel;
+  if(!window.__PTW_LIVE||!d||!d.stages)return previewFunnel();
+  var max=Math.max.apply(null,d.stages.map(function(x){return x.count||0}).concat([1]));
+  return liveOnly('Checkout funnel','Observed local/Test payment outcomes, scoped to the selected workspace.',
+    '<div class="card"><div class="hd"><h2>Outcome stages</h2><span class="pill acc">observed</span></div>'+d.stages.map(function(x){var p=Math.round((x.count||0)*100/max);return '<div style="display:grid;grid-template-columns:150px 1fr 70px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)"><b>'+esc(x.stage)+'</b><div style="height:9px;border-radius:6px;background:var(--panel3);overflow:hidden"><i style="display:block;height:100%;width:'+p+'%;background:var(--acc)"></i></div><span class="num">'+Number(x.count||0).toLocaleString('en-IN')+'</span></div>'}).join('')+'</div>');
+};
+pgCohort=function(){
+  var rows=S.apiSurfaces&&S.apiSurfaces.healthmap;
+  if(!window.__PTW_LIVE||!rows)return previewCohort();
+  return liveOnly('Cohort health matrix','Observed success rate by issuer, method, PSP, and gateway. Values with no source data are not invented.',
+    '<div class="card"><div class="hd"><h2>Observed cohorts</h2><span class="pill acc">'+rows.length+' rows</span></div><table class="tbl"><thead><tr><th>Dimension</th><th>Value</th><th>Attempts</th><th>Success rate</th></tr></thead><tbody>'+rows.slice(0,80).map(function(r){return '<tr><td>'+esc(r.dim)+'</td><td><b>'+esc(r.value)+'</b></td><td class="num">'+r.attempts+'</td><td class="num" style="color:'+(r.sr_bp<9000?'var(--red)':r.sr_bp<9500?'var(--amb)':'var(--grn)')+'">'+(r.sr_bp/100).toFixed(1)+'%</td></tr>'}).join('')+'</tbody></table></div>');
+};
+pgMerchants=function(){
+  var rows=S.apiSurfaces&&S.apiSurfaces.merchants;
+  if(!window.__PTW_LIVE||!rows)return previewMerchants();
+  return liveOnly('Merchants','Tenant-scoped merchant configuration and financial totals from the API.',
+    '<div class="grid2">'+rows.map(function(m){return '<div class="card" data-act="scope" data-scope="'+esc(m.id)+'" style="cursor:pointer"><div class="hd"><h2>'+esc(m.name)+'</h2><span class="pill acc">Mode '+m.autonomy_mode+'</span></div><div style="display:flex;gap:20px;color:var(--mut);font-size:12px"><div>GMV MTD<br><b class="num" style="color:var(--ink)">'+inr((m.gmv_mtd_paise||0)/100)+'</b></div><div>Protected<br><b class="num" style="color:var(--grn)">'+inr((m.protected_mtd_paise||0)/100)+'</b></div><div>Stage<br><b style="color:var(--ink)">'+m.stage+'/5</b></div></div></div>'}).join('')+'</div>');
+};
+pgAudit=function(){
+  var rows=S.apiSurfaces&&S.apiSurfaces.audit;
+  if(!window.__PTW_LIVE||!rows)return previewAudit();
+  return liveOnly('Audit explorer','Hash-chained operator and system decisions returned from the tenant audit ledger.',
+    '<div class="card"><div class="hd"><h2>Latest records</h2><button class="btn sm" data-act="auditJsonl">Export JSONL</button></div><table class="tbl"><thead><tr><th>When</th><th>Action</th><th>Summary</th><th>Actor</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td class="mono" style="font-size:11px">'+esc((r.ts||'').slice(0,19))+'</td><td><b>'+esc(r.action_type)+'</b></td><td>'+esc(r.summary||'')+'</td><td>'+esc(r.actor)+'</td></tr>'}).join('')+'</tbody></table></div>');
+};
+pgExp=function(){
+  var rows=S.apiSurfaces&&S.apiSurfaces.experiments;
+  if(!window.__PTW_LIVE||!rows)return previewExperiments();
+  return liveOnly('Experiments & recovery','Experiments are listed from the measurement ledger; outcome interpretation remains treatment versus control.',
+    '<div class="card"><div class="hd"><h2>Recorded experiments</h2><button class="btn sm" data-act="batchReport">Download batch report</button></div>'+(rows.length?'<table class="tbl"><thead><tr><th>Name</th><th>Status</th><th>Started</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td><b>'+esc(r.name)+'</b></td><td><span class="pill '+(r.status==='running'?'acc':'mut')+'">'+esc(r.status)+'</span></td><td class="mono" style="font-size:11px">'+esc((r.started_at||'').slice(0,19))+'</td></tr>'}).join('')+'</tbody></table>':'<div class="empty"><p>No experiments recorded for this scope yet.</p></div>')+'</div>');
+};
+
+window.addEventListener('click',function(e){
+  var el=e.target.closest('[data-act]');
+  if(!el)return;
+  var act=el.dataset.act;
+  if(act==='connectApi'){
+    e.preventDefault();e.stopImmediatePropagation();
+    var key=window.prompt('Paste a PayTwin workspace API key. It is kept only in this tab and is never sent in a query parameter.');
+    if(key&&key.trim()){
+      location.hash='key='+encodeURIComponent(key.trim());
+      location.reload();
+    }
+    return;
+  }
+  if(['localOrder','localCapture','localVerify','localFulfil','localRefund'].indexOf(act)<0)return;
+  e.preventDefault();e.stopImmediatePropagation();
+  if(!window.__PTW_LIVE){toast('Connect a workspace before running provider actions');return}
+  var x=state(), merchant=S.scope!=='org'?S.scope:(ORG.merchants[0]||'mgro');
+  if(act==='localOrder'){
+    var input=document.getElementById('rzpLocalAmount');
+    api('/api/razorpay/orders',{method:'POST',body:{merchant_id:merchant,amount_paise:money(input&&input.value),receipt:'ui-'+Date.now()}})
+      .then(function(r){x.order=r.order;x.payment=null;x.callback=null;x.verified=false;x.fulfilled=false;x.refund=null;render();toast('Local Razorpay order created')})
+      .catch(function(err){toast('Order rejected · '+String(err).slice(0,56))});
+  }else if(act==='localCapture'&&x.order){
+    api('/api/razorpay/payments/simulate',{method:'POST',body:{merchant_id:merchant,order_id:x.order.id,outcome:'captured',method:'upi',bank:'HDFC'}})
+      .then(function(r){x.payment=r.payment;x.callback=r.checkout_callback;render();toast('Signed local payment webhook materialized')})
+      .catch(function(err){toast('Payment rejected · '+String(err).slice(0,56))});
+  }else if(act==='localVerify'&&x.callback){
+    var payload=Object.assign({merchant_id:merchant},x.callback);
+    api('/api/checkout/razorpay/verify',{method:'POST',body:payload})
+      .then(function(){x.verified=true;render();toast('Checkout signature and captured payment verified')})
+      .catch(function(err){toast('Verification rejected · '+String(err).slice(0,56))});
+  }else if(act==='localFulfil'&&x.callback){
+    api('/api/checkout/razorpay/fulfil',{method:'POST',body:{merchant_id:merchant,razorpay_payment_id:x.callback.razorpay_payment_id,idempotency_key:'ui-fulfil-'+x.callback.razorpay_payment_id}})
+      .then(function(){x.fulfilled=true;render();toast('One fulfilment recorded and audited')})
+      .catch(function(err){toast('Fulfilment blocked · '+String(err).slice(0,56))});
+  }else if(act==='localRefund'&&x.payment){
+    api('/api/razorpay/refunds',{method:'POST',body:{merchant_id:merchant,payment_id:x.payment.id,amount_paise:2500,receipt:'ui-refund-'+Date.now()}})
+      .then(function(r){x.refund=r.refund_id;render();toast('Partial refund processed through accounting guards')})
+      .catch(function(err){toast('Refund rejected · '+String(err).slice(0,56))});
+  }
+},true);
 })();
 </script>
 <script id="ptds-selftest">

@@ -22,6 +22,11 @@ class Integration(Base):
         String(40), ForeignKey("merchants.id"), index=True)
     provider: Mapped[str] = mapped_column(String(30))
     status: Mapped[str] = mapped_column(String(20), default="connected")
+    # ``local_test`` is the credential-free Razorpay-shaped environment. It is
+    # intentionally distinct from an account-backed Razorpay Test Mode setup.
+    environment: Mapped[str] = mapped_column(String(30), default="local_test")
+    webhook_route_token: Mapped[str | None] = mapped_column(String(80), unique=True,
+                                                              nullable=True, index=True)
     capabilities: Mapped[dict] = mapped_column(JSON, default=dict)
     secret_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)  # env ref, never the secret
     api_secret_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -175,3 +180,23 @@ class AuditHead(Base):
     record_count: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now,
                                                  onupdate=_now)
+
+
+class ReliabilityRun(Base):
+    """Durable tenant-scoped Reliability Lab evidence (not a local JSON artifact)."""
+
+    __tablename__ = "reliability_runs"
+    __table_args__ = (
+        UniqueConstraint("run_id", name="uq_reliability_run_id"),
+        Index("ix_reliability_runs_org_at", "organization_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("rel"))
+    run_id: Mapped[str] = mapped_column(String(40), index=True)
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    mode: Mapped[str] = mapped_column(String(40), default="SANDBOX_FIXTURE")
+    gate_verdict: Mapped[str] = mapped_column(String(20), default="UNKNOWN")
+    gate_score: Mapped[int] = mapped_column(Integer, default=0)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

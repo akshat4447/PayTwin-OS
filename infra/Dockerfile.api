@@ -19,7 +19,15 @@ COPY apps/ /app/apps/
 RUN pip install --upgrade pip \
     && pip install -e packages/contracts -e services/sim -e services/ml -e services/api
 
+# The runtime does not need root. Keep writable application state outside the
+# source tree in real deployments (PostgreSQL is the supported production DB).
+RUN useradd --create-home --uid 10001 paytwin \
+    && chown -R paytwin:paytwin /app
+USER paytwin
+
 EXPOSE 8000
+HEALTHCHECK --interval=20s --timeout=3s --start-period=20s --retries=3 \
+    CMD curl --fail --silent http://127.0.0.1:8000/api/ready || exit 1
 
 # migrate then serve; worker uses the same image with a different command.
 # alembic.ini uses %(here)s so the migration path resolves regardless of WORKDIR.
