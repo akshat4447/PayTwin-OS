@@ -178,6 +178,34 @@ def test_webhook_lab_fault_injections(api):
                        headers=h).status_code == 404
 
 
+def test_guided_proof_flow_blocks_then_verifies_correction(api):
+    """The UI's short proof story is backed by the invariant engine, not copy."""
+    client, toks, _ = api
+    headers = {"Authorization": toks["A"]}
+
+    blocked = client.post("/api/reliability/proof-flow", json={"stage": "detect"},
+                          headers=headers)
+    assert blocked.status_code == 200, blocked.text
+    evidence = blocked.json()
+    assert evidence["stage"] == "DEFECT_DETECTED"
+    assert evidence["evidence_label"] == "SIMULATED_FIXTURE"
+    assert evidence["gate"]["verdict"] == "BLOCKED"
+    assert evidence["finding"]["invariant"] == "PTWIN-INV-008"
+    assert evidence["evidence"]["effects"] == 2
+
+    ready = client.post("/api/reliability/proof-flow", json={"stage": "verify"},
+                        headers=headers)
+    assert ready.status_code == 200, ready.text
+    evidence = ready.json()
+    assert evidence["stage"] == "CORRECTION_VERIFIED"
+    assert evidence["gate"]["verdict"] == "READY"
+    assert evidence["evidence"]["effects"] == 1
+
+    invalid = client.post("/api/reliability/proof-flow", json={"stage": "unknown"},
+                          headers=headers)
+    assert invalid.status_code == 422
+
+
 def test_unknown_suite_404(api):
     client, toks, _ = api
     r = client.post("/api/reliability/run", json={"packs": ["nope/x"]},

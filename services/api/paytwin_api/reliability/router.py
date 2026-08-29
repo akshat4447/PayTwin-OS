@@ -120,6 +120,47 @@ def _execute_suite(suite: dict) -> tuple[list[dict], list[dict], bool]:
     return checks, findings, ok
 
 
+def _proof_flow(stage: str) -> dict:
+    """Return deterministic evidence that the lab catches and clears one
+    duplicate-fulfilment defect without altering a tenant's real release gate.
+    """
+    scenario = next(sc for sc in packs.RAZORPAY_CORE["scenarios"]
+                    if sc["id"] == "RZP-ONE-FULFILMENT")
+    if stage == "detect":
+        result = run_scenario(scenario, PRESETS["duplicate_fulfilment"]())
+        if "PTWIN-INV-008" not in result["violations"]:
+            raise RuntimeError("duplicate-fulfilment fixture was not detected")
+        return {
+            "stage": "DEFECT_DETECTED",
+            "evidence_label": "SIMULATED_FIXTURE",
+            "scenario": scenario["id"],
+            "title": "Duplicate fulfilment control caught",
+            "summary": "Two captured attempts produced two fulfilments for one business order.",
+            "finding": {"severity": "critical", "invariant": "PTWIN-INV-008",
+                        "requirement_ids": scenario["req_ids"]},
+            "evidence": result["evidence"],
+            "gate": {"verdict": "BLOCKED", "score": 75,
+                     "critical": 1, "high": 0, "medium": 0},
+            "next_action": "Verify the corrected handler before release.",
+        }
+
+    result = run_scenario(scenario, PRESETS["correct"]())
+    if result["violations"] or result["evidence"]["effects"] != 1:
+        raise RuntimeError("correct fixture did not preserve one fulfilment")
+    return {
+        "stage": "CORRECTION_VERIFIED",
+        "evidence_label": "SIMULATED_FIXTURE",
+        "scenario": scenario["id"],
+        "title": "Correction verified",
+        "summary": "Two captured attempts converged to one fulfilment for the business order.",
+        "finding": None,
+        "evidence": result["evidence"],
+        "gate": {"verdict": "READY", "score": 100,
+                 "critical": 0, "high": 0, "medium": 0},
+        "next_action": "Evidence is ready for the release decision.",
+    }
+
+
 # __PART2__
 router = APIRouter(prefix="/api/reliability", tags=["reliability"])
 
@@ -157,6 +198,17 @@ def suites(p: Principal = Depends(current_principal)) -> dict:
                         "mutations": sum(len(sc.get("mutations", []))
                                          for sc in s["scenarios"])}
                        for s in packs.all_suites()]}
+
+
+@router.post("/proof-flow")
+def proof_flow(body: dict | None = None,
+               p: Principal = Depends(current_principal)) -> dict:
+    """Exercise the guided duplicate-fulfilment proof shown in the UI."""
+    require_admin(p)
+    stage = (body or {}).get("stage", "detect")
+    if stage not in {"detect", "verify"}:
+        raise HTTPException(422, "stage must be 'detect' or 'verify'")
+    return _proof_flow(stage)
 
 
 @router.post("/run")

@@ -2,7 +2,7 @@
 VENV = ./.venv/bin
 PY = $(VENV)/python
 
-.PHONY: help setup dev api worker migrate seed demo razorpay-demo razorpay-api test loadtest verify clean
+.PHONY: help setup dev api worker migrate seed demo razorpay-demo razorpay-api test served-e2e loadtest verify clean
 
 help:
 	@echo "make setup     - create venv + editable installs"
@@ -15,6 +15,7 @@ help:
 	@echo "make razorpay-demo - fresh sandbox Razorpay Test Mode demo + verification"
 	@echo "make razorpay-api  - serve the sandbox Razorpay demo database"
 	@echo "make test      - pytest suite"
+	@echo "make served-e2e - served FastAPI + authenticated Chrome regression"
 	@echo "make loadtest  - webhook flood + API latency percentiles"
 	@echo "make verify    - audit chain verification against the demo DB"
 
@@ -62,6 +63,9 @@ razorpay-api:
 
 test:
 	PAYTWIN_DATABASE_URL=sqlite:///./data/test.db $(PY) -m pytest tests/ -q
+
+served-e2e:
+	$(PY) scripts/served_ui_e2e.py
 
 loadtest:
 	PAYTWIN_DATABASE_URL=sqlite:///./data/loadtest.db $(PY) scripts/loadtest.py

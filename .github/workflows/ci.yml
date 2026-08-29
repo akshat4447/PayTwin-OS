@@ -77,5 +77,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: UI smoke (headless Chrome, incl. regression flows)
-        run: python scripts/ui_smoke.py
+      - name: Install runtime for served browser E2E
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e packages/contracts -e services/sim -e services/ml -e services/api
+
+      - name: UI regression (static smoke + served authenticated browser E2E)
+        run: |
+          python scripts/ui_smoke.py
+          python scripts/served_ui_e2e.py

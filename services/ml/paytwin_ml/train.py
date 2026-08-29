@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+import warnings
 from dataclasses import dataclass, field
 
 import joblib
@@ -224,7 +225,17 @@ def train(payments: list[dict], seed: int = SEED_DEFAULT,
 
 def predict_success(model_dir_path: str, X) -> np.ndarray:
     """Load an artifact and produce calibrated P(success) = 1 − P(fail)."""
-    art = joblib.load(model_dir_path)
+    # NumPy 2.5 deprecates an internal shape assignment in joblib's pickle
+    # reader. Keep the compatibility scope to deserialisation only: this is an
+    # upstream warning, not a model/data warning, and model computation stays
+    # fully warning-visible.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Setting the shape on a NumPy array has been deprecated.*",
+            category=DeprecationWarning,
+        )
+        art = joblib.load(model_dir_path)
     raw = art["model"].predict_proba(X)[:, 1]
     p_fail = np.clip(art["isotonic"].predict(raw), 0.0, 1.0)
     return 1.0 - p_fail

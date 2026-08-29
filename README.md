@@ -3,7 +3,7 @@
 > **Single source of truth** for the product: functionality, specifications, architecture,
 > data model, API, security/privacy, evaluation, operations. Consolidated 2026-08-26 from
 > the former `docs/*` set (see `HISTORY.md` for the build chronology & decision log).
-> Status: **205 pytest green** · migration head `d8e4c2a9b517`.
+> Status: **208 pytest green** · migration head `a2b7c9d3e1f4`.
 
 **PayTwin OS** is an autonomous **payment-resilience & revenue-intelligence platform**: it
 watches payment traffic across merchants, detects degradation, diagnoses root causes,
@@ -47,7 +47,7 @@ pip install -e packages/contracts -e services/sim -e services/ml -e services/api
 pip install pytest httpx
 
 # 2) tests (sqlite; no services needed)
-make test                        # expect: 205 passed
+make test                        # expect: 208 passed
 
 # 3) flagship demo — seeds world, ingests 3h of traffic with an injected HDFC×UPI outage,
 #    detects, decides, executes, measures, prints keys + writes DEMO_RUN.md
@@ -327,7 +327,7 @@ make loadtest && make verify    # perf + audit chain
   incident refs end-to-end.
 
 ## 15) Tests & CI
-`make test` → **205 passed** (sqlite, portable schema). Layers: unit · API integration
+`make test` → **208 passed** (sqlite, portable schema). Layers: unit · API integration
 (httpx ASGI: auth/RBAC/isolation/rate-limit/SSE) · pipeline (dup/late/malformed/out-of-order/
 replay/DLQ/state machine) · ML (determinism/calibration/leakage/registry) · detection/RCA/RaR
 vs ground truth · decisioning (optimizer floor, policy blocks, duplicate execution, autonomy
@@ -336,13 +336,14 @@ decide→policy→execute→outcome→lift→dashboard) · security · frontend 
 Release-blocker suite covers safety gates, tenant isolation, pipeline correctness, policy
 enforcement, audit/outbox semantics, rate limiting.
 CI (`.github/workflows/ci.yml`): pytest + fresh-DB migration drift check → bandit + pip-audit +
-secret scan (`*.py/*.md/*.yml/*.html` — never commit keys) → ui-smoke headless Chrome.
+secret scan (`*.py/*.md/*.yml/*.html` — never commit keys) → static route smoke + served,
+authenticated Chrome E2E.
 
 ## 16) Frontend & design system (PayTwin DS v3)
 Single-file vanilla-JS app (`apps/web/index.html`), no build step, 15 routes (#tour …
 #reliability). With a key it hydrates org/merchants/incidents/policies/models from `/api/*`,
-intercepts backed actions/chat/exports, and labels the connection **TEST MODE API**; without
-a key it runs the local deterministic engine labeled **DEMO**. DS v3 = shadcn-style semantic tokens (dark-first
+intercepts backed actions/chat/exports, and labels the connection **LOCAL WORKSPACE API**; without
+a key it remains an explicitly **SIMULATED** local scenario workspace. DS v3 = shadcn-style semantic tokens (dark-first
 + light/system), Linear-grade dark precision, Geist-style restraint (Inter + JetBrains Mono):
 4-base spacing, radii 8/12/16/pill, hairline separation + two ambient glows, translucent
 sidebar/topbar materials, tabular-nums for money, ⌘K palette, toasts, sheets/modals,
