@@ -3,7 +3,7 @@
 > **Single source of truth** for the product: functionality, specifications, architecture,
 > data model, API, security/privacy, evaluation, operations. Consolidated 2026-08-26 from
 > the former `docs/*` set (see `HISTORY.md` for the build chronology & decision log).
-> Status: **208 pytest green** · migration head `a2b7c9d3e1f4`.
+> Status: migration head `e9f1a2b3c4d5` · run `make test` for the current suite.
 
 **PayTwin OS** is an autonomous **payment-resilience & revenue-intelligence platform**: it
 watches payment traffic across merchants, detects degradation, diagnoses root causes,
@@ -90,6 +90,16 @@ authorization, partial-refund accounting, and failed-refund handling against Pay
 ingestion and state-machine code. The resulting
 `RAZORPAY_TEST_MODE_DEMO.md` is a short judge-facing capability tour.
 
+### Canonical local recovery batch
+
+`make demo` now builds one internally consistent recovery batch for Nova Grocery. It
+deterministically assigns eligible payment groups to treatment or control, issues
+Razorpay-shaped Payment Links **only** to treatment, settles signed local provider outcomes,
+and reports counterfactual gross lift, intervention cost, net incremental GMV, 95% interval,
+sample sizes, stopping events and audit references. The same run also records an excessive
+reroute blocked by policy and a partial-provider result automatically rolled back. `GET
+/api/reports/recovery-batch` downloads that evidence in Markdown.
+
 ## 3) Product surfaces — loop → screens
 Single-page UI, 15 routes (`apps/web/index.html`), including a guided demo tour. It uses
 seeded data by default and clearly labels a connected local API as Test Mode:
@@ -104,7 +114,7 @@ seeded data by default and clearly labels a connected local API as Test Mode:
 | DECIDE | Candidates + EV + benchmark | candidates in incident detail |
 | GOVERN | Policies, blocked-actions log | `/api/policies*` |
 | ACT | Executor via connectors (idempotent, audited) | `POST …/execute` |
-| MEASURE | Experiments & Recovery (lift CI, batch report) | `/api/experiments*`, `/api/reports/*` |
+| MEASURE | Experiments & Recovery (gross lift, cost, **net incremental GMV**, CI, batch report) | `/api/experiments*`, `/api/reports/*` |
 | EXPLAIN | AI Commander (citations, refusals) | `/api/commander/chat` |
 | ASSURE | **Reliability Lab** (release gate, webhook lab, source traceability) | `/api/reliability/*` |
 
@@ -150,7 +160,7 @@ FastAPI :8000 → REST + SSE + serves apps/web ; Commander = read-only tools →
 Conventions: money = **BigInteger paise** (`*_paise`), UTC timestamps, `organization_id`
 everywhere (+`merchant_id` where scoped). Groups:
 - **Tenancy/identity:** organizations · merchants(autonomy_mode 0-4, stage, sr_base_bp, config JSON) · users · api_keys(key_hash sha256, scopes)
-- **Pipeline:** event_inbox UNIQUE(provider,**organization**,external_event_id) · canonical_events append-only UNIQUE(org,provider,external_event_id) · dead_letters · outbox(transactional) · payments UNIQUE(**merchant,provider,payment_ref**) · **orders** (one business order across attempts) · **refunds** (provider id + partial amount) · **fulfilments** (one per order) · **checkout_verifications** (server-side proof)
+- **Pipeline:** event_inbox UNIQUE(provider,**organization**,external_event_id) · canonical_events append-only UNIQUE(org,provider,external_event_id) · dead_letters · outbox(transactional) · payments UNIQUE(**merchant,provider,payment_ref**) · **orders** (one business order across attempts) · **payment_links** (issued → partial → paid/cancelled/expired, action + treatment group) · **refunds** (provider id + partial amount) · **fulfilments** (one per order) · **checkout_verifications** (server-side proof)
 - **Intelligence:** predictions(model/feature version) · incidents(human_id INC-####, RaR lo/hi) · incident_evidence · root_cause_candidates(edge,score,counterfactual_share) · simulations UNIQUE(incident,scenario,seed,params_hash) · action_candidates(ev_paise…) · policies(RP-### versioned rules) · policy_decisions(decision,failed_rules,**policy_version carries contributing versions**) · action_executions(ACT-####, idempotency_key UNIQUE, state machine)
 - **Measurement:** experiments · experiment_assignments UNIQUE(exp,group) · outcomes UNIQUE(assignment)
 - **Models:** model_versions(stage trained→validated→shadow→canary→champion→retired, metrics, artifact)

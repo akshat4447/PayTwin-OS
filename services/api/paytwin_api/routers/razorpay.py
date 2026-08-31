@@ -13,11 +13,11 @@ from sqlalchemy.orm import Session
 from paytwin_api.auth import Principal
 from paytwin_api.config import get_settings
 from paytwin_api.deps import current_principal, err, get_db, require_write
-from paytwin_api.models import Merchant, Payment
+from paytwin_api.models import Merchant, Payment, PaymentLink
 from paytwin_api.services import audit as audit_svc
 from paytwin_api.services.razorpay_local import (
-    LocalProviderError, PROVENANCE, create_order, local_downtime,
-    simulate_payment, simulate_refund,
+    LocalProviderError, PROVENANCE, create_order, create_payment_link, local_downtime,
+    simulate_payment, simulate_payment_link_outcome, simulate_refund,
 )
 
 router = APIRouter(prefix="/api/razorpay", tags=["razorpay-local-test"])
@@ -59,6 +59,23 @@ class RefundBody(BaseModel):
     receipt: str | None = Field(default=None, max_length=80)
 
 
+class CreatePaymentLinkBody(BaseModel):
+    merchant_id: str = Field(min_length=1, max_length=40)
+    amount_paise: int = Field(ge=100, le=100_000_000)
+    reference_id: str | None = Field(default=None, max_length=80)
+    payment_group_id: str | None = Field(default=None, max_length=40)
+    action_execution_id: str | None = Field(default=None, max_length=40)
+    channel: str = Field(default="whatsapp", pattern="^(whatsapp|sms|email)$")
+    reminder_enabled: bool = False
+    expires_after_min: int = Field(default=30, ge=5, le=1_440)
+
+
+class PaymentLinkOutcomeBody(BaseModel):
+    merchant_id: str = Field(min_length=1, max_length=40)
+    outcome: str = Field(pattern="^(paid|partially_paid|expired|cancelled)$")
+    amount_paid_paise: int | None = Field(default=None, ge=1, le=100_000_000)
+
+
 @router.get("/environment")
 def environment(p: Principal = Depends(current_principal),
                 db: Session = Depends(get_db)) -> dict:
@@ -68,7 +85,8 @@ def environment(p: Principal = Depends(current_principal),
         "credentials_required": False,
         "public_webhook_url_required": False,
         "network_calls": False,
-        "uses": ["orders", "captured/failed payment webhooks", "checkout proof", "refunds"],
+        "uses": ["orders", "Payment Link lifecycle webhooks",
+                 "captured/failed payment webhooks", "checkout proof", "refunds"],
         "data_provenance": "locally generated, Razorpay-shaped Test Mode data",
     }
 
@@ -97,6 +115,89 @@ def create_local_order(body: CreateOrderBody, p: Principal = Depends(current_pri
     )
     db.commit()
     return {"provenance": PROVENANCE, "order": result.provider_order}
+
+
+@router.post("/payment-links")
+def create_local_payment_link(body: CreatePaymentLinkBody,
+                              p: Principal = Depends(current_principal),
+                              db: Session = Depends(get_db)) -> dict:
+    """Issue a Razorpay-shaped local recovery link with a bounded expiry."""
+    require_write(p)
+    _ensure_local()
+    merchant = _merchant(db, p, body.merchant_id)
+    if merchant is None:
+        return err(404, "not_found", f"merchant {body.merchant_id}")
+    try:
+        result = create_payment_link(
+            db, organization_id=p.organization_id, merchant_id=merchant.id,
+            amount_paise=body.amount_paise, reference_id=body.reference_id,
+            payment_group_id=body.payment_group_id,
+            action_execution_id=body.action_execution_id, channel=body.channel,
+            reminder_enabled=body.reminder_enabled,
+            expires_after_min=body.expires_after_min,
+        )
+    except LocalProviderError as exc:
+        return err(422, "invalid_local_payment_link", str(exc))
+    audit_svc.append_audit(
+        db, p.organization_id, actor=p.user_id or f"{p.role}@{p.key_prefix}",
+        actor_role=p.role, action_type="razorpay_local.payment_link_issued",
+        object_type="payment_link", object_id=result.link.link_ref,
+        summary="Local Razorpay Test Mode recovery link issued",
+        details={"merchant_id": merchant.id, "reference_id": result.link.reference_id,
+                 "amount_paise": result.link.amount_paise,
+                 "action_execution_id": result.link.action_execution_id,
+                 "provenance": PROVENANCE},
+    )
+    db.commit()
+    return {"provenance": PROVENANCE, "payment_link": result.provider_link}
+
+
+@router.post("/payment-links/{link_ref}/simulate")
+def simulate_local_payment_link(link_ref: str, body: PaymentLinkOutcomeBody,
+                                p: Principal = Depends(current_principal),
+                                db: Session = Depends(get_db)) -> dict:
+    require_write(p)
+    _ensure_local()
+    merchant = _merchant(db, p, body.merchant_id)
+    if merchant is None:
+        return err(404, "not_found", f"merchant {body.merchant_id}")
+    try:
+        output = simulate_payment_link_outcome(
+            db, merchant_id=merchant.id, link_ref=link_ref, outcome=body.outcome,
+            amount_paid_paise=body.amount_paid_paise,
+        )
+    except LocalProviderError as exc:
+        return err(422, "invalid_local_payment_link_outcome", str(exc))
+    audit_svc.append_audit(
+        db, p.organization_id, actor=p.user_id or f"{p.role}@{p.key_prefix}",
+        actor_role=p.role, action_type="razorpay_local.payment_link_outcome",
+        object_type="payment_link", object_id=link_ref,
+        summary=f"Local Razorpay payment link {body.outcome}",
+        details={"merchant_id": merchant.id, "outcome": body.outcome,
+                 "provenance": PROVENANCE},
+    )
+    db.commit()
+    return output
+
+
+@router.get("/payment-links/{link_ref}")
+def get_local_payment_link(link_ref: str, merchant_id: str,
+                           p: Principal = Depends(current_principal),
+                           db: Session = Depends(get_db)) -> dict:
+    _ensure_local()
+    link = (db.query(PaymentLink)
+            .filter(PaymentLink.organization_id == p.organization_id,
+                    PaymentLink.merchant_id == merchant_id,
+                    PaymentLink.provider == "razorpay", PaymentLink.link_ref == link_ref)
+            .one_or_none())
+    if link is None:
+        return err(404, "not_found", "local Razorpay payment link")
+    from paytwin_api.models import Order
+
+    order = db.query(Order).filter(Order.id == link.order_id).one()
+    from paytwin_api.services.razorpay_local import _link_payload
+
+    return {"provenance": PROVENANCE, "payment_link": _link_payload(link, order)}
 
 
 @router.post("/payments/simulate")

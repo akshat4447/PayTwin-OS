@@ -84,12 +84,14 @@ def detection_pass(db, org_id: str | None = None) -> dict:
 def run_once(db) -> dict:
     from paytwin_api.services.reconciliation import reconcile_financial_state
     from paytwin_api.services.ingest import process_pending_inbox
+    from paytwin_api.services.executor import monitor_open_executions
 
     # Provider endpoints return after durable receipt. Materialize their
     # canonical envelopes before detection/reconciliation sees new telemetry.
     inbox = process_pending_inbox(db)
     result = detection_pass(db)
     result["inbox"] = inbox
+    result["recovery_controls"] = monitor_open_executions(db)
     result["reconciliation"] = reconcile_financial_state(db)
     db.commit()
     result["outbox_dispatched"] = dispatch_outbox(db)

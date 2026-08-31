@@ -24,6 +24,14 @@ _EVENT_MAP = {
     "refund.failed": "refund.failed",
     "refund.speed_changed": "refund.updated",
     "order.paid": "order.paid",
+    # Payment Link lifecycle events are normalized through the same canonical
+    # payment state machine. A partial payment stays non-terminal; expired and
+    # cancelled links carry a zero-value failed marker solely for auditable
+    # lifecycle traceability, never for revenue attribution.
+    "payment_link.paid": "payment.success",
+    "payment_link.partially_paid": "payment.authorized",
+    "payment_link.expired": "payment.failed",
+    "payment_link.cancelled": "payment.failed",
 }
 
 
@@ -43,6 +51,7 @@ class RazorpayConnector(PaymentProviderConnector):
             envelope = payload.get("payload", {})
             payment = envelope.get("payment", {}).get("entity", {})
             refund = envelope.get("refund", {}).get("entity", {})
+            payment_link = envelope.get("payment_link", {}).get("entity", {})
             # Refund webhooks carry both an independent refund entity and the
             # original payment entity.  The refund amount must NEVER be read
             # from the payment snapshot.
@@ -95,7 +104,9 @@ class RazorpayConnector(PaymentProviderConnector):
                 "order_ref": ent.get("order_id"),
                 "order_amount_paise": ent.get("amount"),
                 "attempt_no": 1,
-                "group_id": ent.get("order_id") or payment_ref,
+                "group_id": ((payment_link.get("notes") or {}).get("paytwin_group_id")
+                             or (ent.get("notes") or {}).get("paytwin_group_id")
+                             or ent.get("order_id") or payment_ref),
                 "source_event": raw,
                 "failure_detail": {
                     "source": ent.get("error_source"), "code": ent.get("error_code"),
@@ -103,6 +114,12 @@ class RazorpayConnector(PaymentProviderConnector):
                     "description": err,
                 },
             }
+            if payment_link:
+                event_payload.update({
+                    "payment_link_ref": payment_link.get("id"),
+                    "payment_link_status": payment_link.get("status"),
+                    "payment_link_reference_id": payment_link.get("reference_id"),
+                })
             if refund:
                 event_payload.update({
                     "refund_ref": str(refund.get("id") or ""),
@@ -136,8 +153,9 @@ class RazorpayConnector(PaymentProviderConnector):
             # The local environment implements fetch/refund against its own
             # ledger. It does not pretend to expose Razorpay's account API or
             # downtime feed until real credentials are configured.
-            payment_fetch=True, payment_link=False, downtime_feed=False,
+            payment_fetch=True, payment_link=True, downtime_feed=False,
             direct_retry=False, refund=True,
             notes={"payment_fetch": "local ledger only without provider credentials",
+                   "payment_link": "Razorpay-shaped Local Test Mode lifecycle only",
                    "downtime_feed": "not configured; local health is derived from events"},
         )

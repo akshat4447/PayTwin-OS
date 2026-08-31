@@ -78,7 +78,13 @@ class TestSafetyGates:
         m.autonomy_mode = 4  # AUTONOMOUS so the flow actually reaches dispatch
         db.commit()
         cand = type("C", (), {"id": "c1", "kind": "retry_burst",
-                              "params": {"count": 5, "cooldown_ok_ok": 1},
+                              "params": {"count": 5, "cooldown_ok_ok": 1,
+                                         "evidence": {"provider_healthy": True,
+                                                      "consent_on_file": True,
+                                                      "within_mandate_window": True,
+                                                      "agent_authority_verified": True,
+                                                      "contacts_24h": 0,
+                                                      "minutes_since_last_action": 60}},
                               "value_paise": 100,
                               "incident_id": None})()
         ex, _ = executor.request_execution(db, None, m, cand)

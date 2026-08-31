@@ -541,6 +541,7 @@ function pgPol(){return '<div class="pagegrid"><div class="trow"><div><p class="
  '<div class="card"><div class="hd"><h2>Compliance predicate library</h2></div><div style="display:flex;flex-direction:column;gap:7px">'+['dnd_window_ok \u2014 TRAI quiet hours','within_mandate_window \u2014 RBI e-mandate notice','consent_on_file \u2014 DPDP consent ledger','contact_budget_ok \u2014 anti-harassment cap','agent_authority_verified \u2014 AP2/UAP mandates','provider_healthy \u2014 connector circuit breaker'].map(x=>'<span class="chip" style="justify-content:flex-start;padding:6px 9px;font-size:11px">'+ic('check',12)+' '+x+'</span>').join('')+'</div></div></div></div>'}
 function pgCmd(){if(!S.chat.length)S.chat=[{r:'ai',t:'Monitoring INC-2481 for '+MERCH.mgro.name+'. Cashfree UPI collect is the dominant failure path (RCA confidence 0.78). Bounded reroute under RP-014 is live, protecting \u2248\u20b936k of cohort GMV with rollback armed.',c:['INC-2481','evt_88412','metric.hdfc_cashfree_sr']}];
  return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('bot',13)+' EVIDENCE-GROUNDED AGENT</p><h1>AI Incident Commander</h1><p class="sub">Answers cite evidence ids. Write-intents become approval requests — never direct actions.</p></div><div class="toolbar"><span class="pill '+(S.llmDown?'amb':'grn')+'">'+(S.llmDown?'LOCAL FALLBACK MODEL':'HOSTED MODEL')+'</span><button class="btn sm" data-act="llmDrill">Drill fallback</button></div></div>'+
+ '<div class="banner ok" style="margin-bottom:14px"><span class="ic">'+ic('shield',18)+'</span><div><b>AI ranks and explains; deterministic controls decide and execute.</b><p>Ranked actions carry evidence coverage and confidence. Below the evidence threshold, the agent abstains; policy code then enforces consent, caps, approval, idempotency, and stopping rules.</p></div><span class="pill acc">ABSTAIN BELOW 0.75</span></div>'+
  '<div class="grid21"><div class="card"><div class="chatbox" id="chatbox">'+
  S.chat.map(m=>'<div class="msg '+(m.r==='you'?'you':'')+'">'+(m.r==='ai'?'<span class="aiav">'+ic('bot',15)+'</span>':'')+'<div class="bub">'+m.t+(m.c?'<div class="meta">'+m.c.map(c=>'<span class="chip">'+c+'</span>').join('')+'</div>':'')+'</div></div>').join('')+
  '</div><div style="display:flex;gap:8px;margin-top:14px"><input id="cmdIn" style="flex:1" placeholder="Ask about incidents, causes, policies\u2026"><button class="btn pr" data-act="send">'+ic('send',15)+'</button></div>'+
@@ -1110,7 +1111,7 @@ window.batchReport=function(){if(!LIVE)return _batchReport();
   fetch('/api/reports/recovery-batch?hours=720',{headers:H})
    .then(function(r){return r.text()})
    .then(function(t){dl('paytwin-recovery-batch-report.md',t,'text/markdown');
-     toast('Recovery Batch Report downloaded · TEST MODE API')})
+     toast('Recovery Batch Report downloaded')})
    .catch(function(){_batchReport()});};
 window.auditExport=function(fmt){if(!LIVE)return _auditExport(fmt);
   fetch('/api/audit/export?fmt='+fmt,{headers:H})
@@ -1209,25 +1210,32 @@ pgExp=function(){
 
  var measuredExperimentsPage=pgExp;
  pgExp=function(){
-  var rows=S.apiSurfaces&&S.apiSurfaces.experiments;
-  if(!window.__PTW_LIVE||!rows)return measuredExperimentsPage();
+ var rows=S.apiSurfaces&&S.apiSurfaces.experiments;
+ if(!window.__PTW_LIVE||!rows)return measuredExperimentsPage();
   var latest=rows[0]||{},summary=latest.summary||{},rates=summary.recovery_rate||{},
       arms=summary.n||{},ci=summary.ci95||[],lift=Number(summary.lift_abs||0),
-      recovered=Number(summary.incremental_paise||0);
+      gross=Number(summary.incremental_gross_paise||summary.incremental_paise||0),
+      cost=Number(summary.intervention_cost_paise||0),
+      net=Number(summary.net_incremental_paise||gross-cost),
+      netCI=summary.net_incremental_ci95_paise||[],
+      auditRefs=summary.audit_refs||[],stops=summary.stopping_events||[];
   var pct=function(value){return (Number(value||0)*100).toFixed(1)+'%';};
   var ciText=ci.length===2?(pct(ci[0])+' to '+pct(ci[1])):'interval pending';
+  var money=function(value){return inr(Number(value||0)/100);};
+  var moneyCI=netCI.length===2?(money(netCI[0])+' to '+money(netCI[1])):'interval pending';
   return liveOnly('Experiments & recovery','Measured treatment-versus-control outcomes from the workspace ledger. Estimates stay separate from operational forecasts.',
     '<div class="metrics">'+
       metric('Recorded experiments',String(rows.length),'measurement ledger','g',[22,34,48,58,66,74])+
       metric('Latest lift',lift>=0?'+'+pct(lift):pct(lift),ciText,'p',[18,27,36,48,56,64])+
-      metric('Incremental recovered value',inr(Math.abs(recovered)/100),(recovered>=0?'net positive':'under review'),'g',[24,32,42,53,62,72])+
+      metric('Net incremental GMV',money(Math.abs(net)),(net>=0?'after intervention cost':'under review'),'g',[24,32,42,53,62,72])+
       metric('Sampled payments',String((arms.control||0)+(arms.treatment||0)),'control + treatment','',[28,36,46,55,62,72])+
     '</div><div class="card"><div class="hd"><h2>Recorded experiments</h2><button class="btn sm" data-act="batchReport">Download batch report</button></div>'+
-    (rows.length?'<table class="tbl"><thead><tr><th>Experiment</th><th>State</th><th>Treatment / control</th><th>Measured lift</th><th>95% interval</th><th>Started</th></tr></thead><tbody>'+
+    (rows.length?'<table class="tbl"><thead><tr><th>Experiment</th><th>State</th><th>Treatment / control</th><th>Gross incremental</th><th>Cost</th><th>Net incremental</th></tr></thead><tbody>'+
       rows.map(function(row){var s=row.summary||{},r=s.recovery_rate||{},n=s.n||{},interval=s.ci95||[];
-        return '<tr><td><b>'+esc(row.name)+'</b></td><td><span class="pill '+(row.status==='running'?'acc':'mut')+'">'+esc(row.status)+'</span></td><td class="num">'+pct(r.treatment)+' / '+pct(r.control)+'<br><small style="color:var(--dim)">'+(n.treatment||0)+' / '+(n.control||0)+' sampled</small></td><td class="num" style="color:'+(Number(s.lift_abs||0)>=0?'var(--grn)':'var(--red)')+'">'+(Number(s.lift_abs||0)>=0?'+':'')+pct(s.lift_abs)+'</td><td class="num">'+(interval.length===2?(pct(interval[0])+' to '+pct(interval[1])):'—')+'</td><td class="mono" style="font-size:11px">'+esc((row.started_at||'').slice(0,19))+'</td></tr>';}).join('')+
+        var g=Number(s.incremental_gross_paise||s.incremental_paise||0),c=Number(s.intervention_cost_paise||0),nval=Number(s.net_incremental_paise||g-c);
+        return '<tr><td><b>'+esc(row.name)+'</b><br><small class="mono" style="color:var(--dim)">'+esc(((s.audit_refs||[])[0]||'ledger-recorded'))+'</small></td><td><span class="pill '+(row.status==='running'?'acc':'mut')+'">'+esc(row.status)+'</span></td><td class="num">'+pct(r.treatment)+' / '+pct(r.control)+'<br><small style="color:var(--dim)">'+(n.treatment||0)+' / '+(n.control||0)+' sampled</small></td><td class="num">'+money(g)+'</td><td class="num" style="color:var(--mut)">−'+money(c)+'</td><td class="num" style="color:'+(nval>=0?'var(--grn)':'var(--red)')+'">'+(nval>=0?'+':'')+money(nval)+'</td></tr>';}).join('')+
       '</tbody></table>':'<div class="empty"><p>No experiments recorded for this scope yet.</p></div>')+
-    '</div><div class="grid2"><div class="card"><div class="hd"><h2>Interpretation rule</h2></div><p style="color:var(--mut);font-size:12.5px">Recovery value is reported only against a matched control. A point estimate is not promoted without its sample size and confidence interval.</p></div><div class="card"><div class="hd"><h2>Decision boundary</h2></div><p style="color:var(--mut);font-size:12.5px">Policy controls remain authoritative. Measurement can recommend a change; it cannot bypass approval, consent, or risk caps.</p></div></div>');
+    '</div><div class="grid2"><div class="card"><div class="hd"><h2>Latest recovery batch proof</h2><span class="pill '+(net>=0?'grn':'amb')+'">'+(net>=0?'net positive':'review')+'</span></div><table class="tbl"><tr><td>Gross treatment recovery</td><td class="num" style="text-align:right">'+money(summary.gross_recovered_paise)+'</td></tr><tr><td>Matched-control expectation</td><td class="num" style="text-align:right">−'+money(summary.control_expected_paise)+'</td></tr><tr><td>Incremental recovery</td><td class="num" style="text-align:right">'+money(gross)+'</td></tr><tr><td>Intervention cost</td><td class="num" style="text-align:right">−'+money(cost)+'</td></tr><tr><td><b>Net incremental GMV</b></td><td class="num" style="text-align:right;color:'+(net>=0?'var(--grn)':'var(--red)')+'"><b>'+money(net)+'</b></td></tr></table><p style="font-size:11.5px;color:var(--dim);margin-top:9px">95% net interval: '+moneyCI+' · '+(arms.treatment||0)+' treatment / '+(arms.control||0)+' control · '+stops.length+' stopping event'+(stops.length===1?'':'s')+'.</p><p class="mono" style="font-size:10.5px;color:var(--dim);margin-top:7px">audit: '+esc(auditRefs.join(', ')||'pending')+'</p></div><div class="card"><div class="hd"><h2>Why not a payment optimizer alone?</h2></div><p style="color:var(--mut);font-size:12.5px">A payment optimizer selects a route. PayTwin decides whether a customer-recovery intervention is allowed, applies merchant-specific stopping rules, proves the integration behaves safely, and measures net incremental GMV against a control.</p><p style="font-size:11.5px;color:var(--dim);margin-top:9px">Routing intelligence and recovery governance are complementary controls, not substitutes.</p></div></div><div class="card" style="margin-top:14px"><div class="hd"><h2>Decision boundary</h2><span class="pill acc">deterministic execution</span></div><p style="color:var(--mut);font-size:12.5px">AI ranks interventions and explains evidence; it abstains when evidence coverage is insufficient. Typed policy code authorizes the request, and the executor performs the bounded action. Measurement cannot bypass consent, approval, or risk caps.</p></div>');
  };
  window.addEventListener('click',function(e){
   var el=e.target.closest('[data-act]');

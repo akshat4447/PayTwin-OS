@@ -21,6 +21,7 @@ from paytwin_api.models import (
 )
 from paytwin_api.services.audit import append_audit
 from paytwin_api.services.bus import bus
+from paytwin_api.services import experiments as experiment_service
 
 
 import asyncio
@@ -104,13 +105,18 @@ def seeded(db, keys):
                    rar_paise=505_853, affected_payments=39)
     db.add(inc)
     db.flush()
+    evidence = {"provider_healthy": True, "consent_on_file": True,
+                "within_mandate_window": True, "agent_authority_verified": True,
+                "contacts_24h": 0, "minutes_since_last_action": 60}
     db.add(ActionCandidate(
         incident_id=inc.id, kind="reroute_psp", label="Reroute Psp", detail="",
-        params={"count": 2, "attempts_used": 1, "slice_value_paise": 100_000},
+        params={"count": 2, "attempts_used": 1, "slice_value_paise": 100_000,
+                "evidence": evidence},
         value_paise=400_000, ev_paise=89_475, rank=0))
     db.add(ActionCandidate(
         incident_id=inc.id, kind="retry_burst", label="Retry Burst", detail="",
-        params={"count": 9, "attempts_used": 3, "slice_value_paise": 900_000_00},
+        params={"count": 9, "attempts_used": 3, "slice_value_paise": 900_000_00,
+                "evidence": evidence},
         value_paise=400_000, ev_paise=-5, rank=1))
     db.commit()
     return {"incident": inc.human_id, "cand_ok":
@@ -354,12 +360,30 @@ class TestModelsCommanderAuditReportsChaos:
         first_line = exp.text.strip().splitlines()[0]
         assert __import__("json").loads(first_line)["organization_id"] == "org1"
 
-    def test_reports_batch_markdown(self, client, keys, seeded):
+    def test_reports_batch_markdown(self, client, keys, seeded, db):
+        experiment = experiment_service.create_experiment(
+            db, "org1", "mer1", "canonical recovery", incident_id=None)
+        action = ActionExecution(organization_id="org1", merchant_id="mer1",
+                                 human_id="ACT-REPORT", kind="payment_link",
+                                 idempotency_key="report-action", state="SUCCEEDED",
+                                 outcome={"gross_action_cost_paise": 1_200,
+                                          "stopping_events": [{"reason": "bounded_complete"}]})
+        db.add(action)
+        db.flush()
+        for i in range(80):
+            assignment = experiment_service.record_assignment(
+                db, experiment, f"report_group_{i}", action_execution_id=action.id)
+            recovered = (i % 4 != 0) if assignment.arm == "treatment" else (i % 5 == 0)
+            experiment_service.record_outcome(db, assignment, recovered, 20_000)
+        db.commit()
         r = client.get("/api/reports/recovery-batch?hours=24",
                        headers=_h(keys["admin1"]))
         assert r.status_code == 200
         assert "text/markdown" in r.headers["content-type"]
         assert "Recovery batch report" in r.text
+        assert "net incremental GMV" in r.text
+        assert "intervention cost" in r.text
+        assert "audit references: ACT-REPORT" in r.text
 
     def test_chaos_inject_ingests_webhooks(self, client, keys, seeded):
         r = client.post("/api/chaos/issuer_outage",

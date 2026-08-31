@@ -149,19 +149,40 @@ def halt_route(human_id: str, p: Principal = Depends(current_principal),
         return err(404, "not_found", f"incident {human_id}")
     if inc.state == "RESOLVED":
         return err(409, "already_resolved", f"incident {human_id} is resolved")
+    # A halt must stop active work, not merely repaint the incident state. The
+    # executor cancels outstanding local Payment Links and records each stop in
+    # the same hash-chained audit ledger.
+    from paytwin_api.models import ActionExecution
+    from paytwin_api.services.executor import halt_execution
+
+    active = (db.query(ActionExecution)
+              .filter(ActionExecution.incident_id == inc.id,
+                      ActionExecution.state.in_(("VALIDATED", "SCHEDULED", "EXECUTING",
+                                                 "MONITORING", "FAILED_RETRYABLE"))).all())
+    actor = p.user_id or p.role
+    for execution in active:
+        if execution.state == "VALIDATED":
+            execution.state = "HALTED"
+            execution.outcome = {"stop_reason": "incident_halted_before_execution",
+                                 "stopping_events": [{"reason": "incident_halted_before_execution",
+                                                      "automatic": False}]}
+        else:
+            halt_execution(db, execution, reason="incident_halted_by_operator", actor=actor)
     inc.state = "HALTED"
     from paytwin_api.services import audit as audit_svc
 
     audit_svc.append_audit(
-        db, p.organization_id, actor=p.user_id or p.role,
+        db, p.organization_id, actor=actor,
         actor_role="human-operator", action_type="autopilot.halt",
         object_type="incident", object_id=inc.human_id,
         summary=f"Autopilot halted on {inc.human_id} by operator",
         incident_id=inc.id)
     publish_outbox(db, p.organization_id, "incident",
-                   {"incident": inc.human_id, "state": inc.state})
+                   {"incident": inc.human_id, "state": inc.state,
+                    "halted_executions": len(active)})
     db.commit()
-    return {"human_id": inc.human_id, "state": inc.state}
+    return {"human_id": inc.human_id, "state": inc.state,
+            "halted_executions": len(active)}
 
 
 @router.get("/{human_id}")

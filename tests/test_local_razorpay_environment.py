@@ -5,9 +5,11 @@ from paytwin_api.auth import Principal
 from paytwin_api.models import Merchant, Organization
 from paytwin_api.routers.checkout import FulfilBody, RazorpayVerifyBody, fulfil_razorpay, verify_razorpay
 from paytwin_api.routers.razorpay import (
-    CreateOrderBody, RefundBody, SimulatePaymentBody, create_local_order,
-    simulate_local_payment, simulate_local_refund,
+    CreateOrderBody, CreatePaymentLinkBody, PaymentLinkOutcomeBody, RefundBody,
+    SimulatePaymentBody, create_local_order, create_local_payment_link,
+    simulate_local_payment, simulate_local_payment_link, simulate_local_refund,
 )
+from paytwin_api.models import Payment
 from paytwin_api.services.ingest import accept_webhook, process_pending_inbox
 from paytwin_api.services.razorpay_local import PROVENANCE
 
@@ -47,6 +49,43 @@ def test_local_razorpay_order_payment_checkout_fulfilment_and_refund(db):
         merchant_id="mer_local", payment_id=callback["razorpay_payment_id"],
         amount_paise=2_500, receipt="local-refund-1"), p, db)
     assert refunded["provenance"] == PROVENANCE
+
+
+def test_local_payment_link_lifecycle_preserves_recovery_group(db):
+    _seed(db)
+    p = _principal()
+    created = create_local_payment_link(
+        CreatePaymentLinkBody(merchant_id="mer_local", amount_paise=12_500,
+                              reference_id="recovery-link-1", payment_group_id="grp-treatment-1"),
+        p, db)
+    link = created["payment_link"]
+    assert link["status"] == "issued"
+    assert link["notes"]["paytwin_group_id"] == "grp-treatment-1"
+
+    settled = simulate_local_payment_link(
+        link["id"], PaymentLinkOutcomeBody(merchant_id="mer_local", outcome="paid"), p, db)
+    assert settled["payment_link"]["status"] == "paid"
+    payment = db.query(Payment).filter_by(payment_ref=settled["payment"]["id"]).one()
+    assert payment.status == "success"
+    assert payment.group_id == "grp-treatment-1"
+
+
+def test_local_payment_link_partial_and_cancelled_outcomes_are_non_revenue(db):
+    _seed(db)
+    p = _principal()
+    created = create_local_payment_link(
+        CreatePaymentLinkBody(merchant_id="mer_local", amount_paise=12_500,
+                              reference_id="recovery-link-2", payment_group_id="grp-treatment-2"),
+        p, db)
+    partial = simulate_local_payment_link(
+        created["payment_link"]["id"],
+        PaymentLinkOutcomeBody(merchant_id="mer_local", outcome="partially_paid",
+                               amount_paid_paise=2_500), p, db)
+    assert partial["payment_link"]["status"] == "partially_paid"
+    cancelled = simulate_local_payment_link(
+        created["payment_link"]["id"],
+        PaymentLinkOutcomeBody(merchant_id="mer_local", outcome="cancelled"), p, db)
+    assert cancelled["payment_link"]["status"] == "cancelled"
 
 
 def test_accepted_webhook_is_durable_then_worker_materializes(db):

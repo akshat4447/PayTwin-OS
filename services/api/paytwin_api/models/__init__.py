@@ -9,6 +9,7 @@ from paytwin_api.models.pipeline import (  # noqa: F401
     Order,
     Outbox,
     Payment,
+    PaymentLink,
     Refund,
 )
 from paytwin_api.models.intel import (  # noqa: F401

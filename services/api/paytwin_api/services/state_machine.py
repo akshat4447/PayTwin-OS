@@ -72,6 +72,11 @@ def _ensure_payment(db: Session, e: CanonicalEvent) -> Payment:
         # Some providers first send a sparse authorization and only attach the
         # order on capture/refund.  Preserve the first complete relationship.
         row.order_ref = str(e.payload["order_ref"])
+    if e.payload.get("payment_link_ref") and e.payload.get("group_id"):
+        # The original captured event is keyed by the new recovery order. The
+        # immediately following Payment Link webhook carries the eligible
+        # recovery group; preserve that stronger attribution key for outcomes.
+        row.group_id = str(e.payload["group_id"])
     return row
 
 

@@ -7,6 +7,7 @@ from paytwin_api.models import (
     AuditRecord,
     Merchant,
     Organization,
+    PaymentLink,
 )
 from paytwin_api.services import experiments as exp_svc
 from paytwin_api.services import executor
@@ -23,9 +24,17 @@ def _seed(db, autonomy=3):
 
 
 def _cand(db, m, kind="retry_burst", **params):
+    evidence = {
+        "provider_healthy": True,
+        "consent_on_file": True,
+        "within_mandate_window": True,
+        "agent_authority_verified": True,
+        "contacts_24h": 0,
+        "minutes_since_last_action": 60,
+    }
     c = ActionCandidate(incident_id="inc1", kind=kind, label=kind,
                         params={"count": 10, "p_success": 0.4, "avg_amount_paise": 50_000,
-                                "attempts_used": 1, **params},
+                                "attempts_used": 1, "evidence": evidence, **params},
                         value_paise=params.get("value_paise", 500_000))
     db.add(c)
     db.commit()
@@ -83,6 +92,58 @@ class TestExecutor:
         # mockprovider lacks direct_retry → FAILED_FINAL, audited, no fake success
         assert ex2.state == "FAILED_FINAL" and "capability" in ex2.outcome.get("error", "")
 
+    def test_missing_policy_evidence_fails_closed(self, db):
+        m = _seed(db, autonomy=4)
+        c = ActionCandidate(incident_id="inc1", kind="retry_burst", label="unproven",
+                            params={"count": 1, "avg_amount_paise": 50_000,
+                                    "attempts_used": 1}, value_paise=50_000)
+        db.add(c)
+        db.commit()
+        ex, result = executor.request_execution(db, None, m, c)
+        assert ex.state == "REJECTED_BY_POLICY"
+        assert result.decision == "block"
+        assert any("provider_healthy" in reason for reason in result.failed_rules)
+        assert any("agent_authority" in reason for reason in result.failed_rules)
+
+    def test_retryable_and_partial_provider_failures_are_controlled(self, db):
+        m = _seed(db, autonomy=4)
+        transient = _cand(db, m, failure_mode="timeout", retry_after_sec=0,
+                          stopping_rules={"max_provider_retries": 2})
+        ex, result = executor.request_execution(db, None, m, transient)
+        assert result.decision == "allow" and ex.state == "FAILED_RETRYABLE"
+        # The runtime consumes the recorded retry and succeeds once the injected
+        # provider fault is cleared; no duplicate execution row is created.
+        assert executor.monitor_execution(db, ex) == "SUCCEEDED"
+        assert ex.outcome["attempted"] == 10
+
+        partial = _cand(db, m, failure_mode="partial_success",
+                        stopping_rules={"rollback_on_partial_success": True})
+        partial_ex, _ = executor.request_execution(db, None, m, partial)
+        assert partial_ex.state == "MONITORING"
+        assert executor.monitor_execution(db, partial_ex) == "ROLLED_BACK"
+        assert partial_ex.outcome["stop_reason"] == "partial_provider_success"
+
+    def test_local_payment_link_halt_cancels_open_links(self, db):
+        m = _seed(db, autonomy=4)
+        m.config = {"connector": "razorpay"}
+        evidence = {"provider_healthy": True, "consent_on_file": True,
+                    "within_mandate_window": True, "agent_authority_verified": True,
+                    "contacts_24h": 0, "minutes_since_last_action": 60,
+                    "local_test_mode": True,
+                    "policy_evaluated_at": "2026-08-31T12:00:00+05:30"}
+        c = _cand(db, m, kind="payment_link", treatment_group_ids=["g1", "g2"],
+                  avg_amount_paise=10_000, slice_value_paise=10_000, evidence=evidence,
+                  stopping_rules={"max_duration_min": 30,
+                                  "max_campaign_value_paise": 20_000})
+        ex, result = executor.request_execution(db, None, m, c)
+        assert result.decision == "allow" and ex.state == "MONITORING"
+        assert db.query(PaymentLink).filter_by(action_execution_id=ex.id,
+                                               status="issued").count() == 2
+        halted = executor.halt_execution(db, ex, reason="operator_cancel", actor="operator")
+        assert halted.state == "HALTED"
+        assert db.query(PaymentLink).filter_by(action_execution_id=ex.id,
+                                               status="cancelled").count() == 2
+
 
 class TestAuditChain:
     def test_chain_verifies_and_detects_tamper(self, db):
@@ -131,3 +192,28 @@ class TestExperiments:
         assert 0.03 < r["recovery_rate"]["control"] < 0.18
         assert r["lift_abs"] > 0.1 and r["significant"]
         assert r["ci95"][0] > 0
+
+    def test_controls_have_no_action_and_money_is_counterfactual(self, db):
+        m = _seed(db)
+        e = exp_svc.create_experiment(db, "org1", "mer1", "balanced value")
+        action = ActionExecution(organization_id="org1", merchant_id=m.id,
+                                 human_id="ACT-9000", kind="payment_link",
+                                 idempotency_key="measurement-action",
+                                 state="SUCCEEDED", outcome={"gross_action_cost_paise": 500})
+        db.add(action)
+        db.flush()
+        for i in range(200):
+            assignment = exp_svc.record_assignment(db, e, f"value_group_{i}",
+                                                   action_execution_id=action.id)
+            # Identical recovery in both arms: differing arm sizes must not
+            # fabricate monetary lift from a raw-total subtraction.
+            exp_svc.record_outcome(db, assignment, recovered=True, amount_paise=10_000)
+            if assignment.arm == "control":
+                assert assignment.action_execution_id is None
+            else:
+                assert assignment.action_execution_id == action.id
+        measured = exp_svc.results(db, e)
+        assert measured["incremental_gross_paise"] == 0
+        assert measured["intervention_cost_paise"] == 500
+        assert measured["net_incremental_paise"] == -500
+        assert measured["audit_refs"] == [action.human_id]

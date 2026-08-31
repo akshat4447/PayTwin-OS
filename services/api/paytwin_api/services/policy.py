@@ -148,10 +148,14 @@ def evaluate(rules: dict, ctx: PolicyContext,
     if rules.get(PolicyRuleId.PROVIDER_HEALTHY.value, True):
         hard(PolicyRuleId.PROVIDER_HEALTHY.value, ctx.provider_healthy,
              "connector circuit-breaker open")
-    if rules.get(PolicyRuleId.CONSENT_ON_FILE.value, True):
+    # Consent and contact-budget checks are relevant to customer outreach,
+    # not to a purely internal routing action. Their evidence remains
+    # fail-closed whenever the action can contact a customer.
+    if ctx.action_kind in CONTACT_ACTIONS and rules.get(PolicyRuleId.CONSENT_ON_FILE.value, True):
         hard(PolicyRuleId.CONSENT_ON_FILE.value, ctx.consent_on_file,
              "no DPDP consent on file")
-    if rules.get(PolicyRuleId.WITHIN_MANDATE_WINDOW.value, True):
+    if ctx.action_kind == ActionKind.CALENDAR_SHIFT.value \
+            and rules.get(PolicyRuleId.WITHIN_MANDATE_WINDOW.value, True):
         hard(PolicyRuleId.WITHIN_MANDATE_WINDOW.value, ctx.within_mandate_window,
              "outside RBI e-mandate window")
     if rules.get(PolicyRuleId.AGENT_AUTHORITY.value, True) and ctx.action_kind in MONEY_ACTIONS:

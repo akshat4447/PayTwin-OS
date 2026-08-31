@@ -218,6 +218,11 @@ def main() -> int:
             wait_for("served forecast completes", lambda: cdp.evaluate(
                 "document.body.innerText.includes('Pre-incident scenario forecast')"), timeout=20)
 
+            cdp.evaluate("document.querySelector('[data-p=\"experiments\"]').click(); true")
+            wait_for("recovery money-proof screen renders", lambda: cdp.evaluate(
+                "document.body.innerText.includes('Net incremental GMV') && "
+                "document.body.innerText.includes('Why not a payment optimizer alone?')"))
+
             cdp.evaluate("document.querySelector('[data-act=\"theme\"]').click(); true")
             wait_for("light theme has high-contrast text", lambda: cdp.evaluate(
                 "document.documentElement.dataset.theme === 'light' && getComputedStyle(document.body).color === 'rgb(17, 24, 39)'"))

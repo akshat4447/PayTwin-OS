@@ -174,6 +174,51 @@ class Order(Base):
                                                   onupdate=_now)
 
 
+class PaymentLink(Base):
+    """A provider-shaped recovery link, kept separate from its resulting payment.
+
+    A recovery link can be issued, partially paid, paid, cancelled or expired.
+    Keeping that lifecycle in the ledger lets a revenue experiment attribute a
+    captured payment to the bounded treatment that issued the link, without
+    mistaking an ordinary eventual retry for recovered revenue.
+    """
+
+    __tablename__ = "payment_links"
+    __table_args__ = (
+        UniqueConstraint("merchant_id", "provider", "link_ref",
+                         name="uq_payment_link_merchant_provider_ref"),
+        UniqueConstraint("merchant_id", "reference_id",
+                         name="uq_payment_link_merchant_reference"),
+        Index("ix_payment_link_execution", "action_execution_id"),
+        Index("ix_payment_link_status", "merchant_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: _id("plk"))
+    organization_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("organizations.id"), index=True)
+    merchant_id: Mapped[str] = mapped_column(
+        String(40), ForeignKey("merchants.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(30), default="razorpay")
+    link_ref: Mapped[str] = mapped_column(String(120))
+    reference_id: Mapped[str] = mapped_column(String(80))
+    order_id: Mapped[str] = mapped_column(String(40), ForeignKey("orders.id"), index=True)
+    action_execution_id: Mapped[str | None] = mapped_column(
+        String(40), ForeignKey("action_executions.id"), nullable=True)
+    payment_group_id: Mapped[str | None] = mapped_column(String(40), index=True, nullable=True)
+    amount_paise: Mapped[int] = mapped_column(BigInteger, default=0)
+    amount_paid_paise: Mapped[int] = mapped_column(BigInteger, default=0)
+    currency: Mapped[str] = mapped_column(String(8), default="INR")
+    status: Mapped[str] = mapped_column(String(24), default="issued")
+    channel: Mapped[str] = mapped_column(String(20), default="whatsapp")
+    reminder_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    reminder_count: Mapped[int] = mapped_column(Integer, default=0)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    terminal_reason: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now,
+                                                  onupdate=_now)
+
+
 class Refund(Base):
     """Provider refund lifecycle, kept independent from the aggregate payment state."""
 

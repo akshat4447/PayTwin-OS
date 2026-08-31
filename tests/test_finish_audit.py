@@ -19,6 +19,7 @@ from paytwin_api.db import Base, make_engine
 from paytwin_api.models import (
     ActionCandidate,
     AuditRecord,
+    Experiment,
     Incident,
     Merchant,
     Organization,
@@ -107,6 +108,15 @@ def test_flagship_artifacts_persist_to_disk(tmp_path):
     seed_world(s)
     seed_history(s, "org1", seed=7, hours=1.5, only=("mgro",))
     story = run_flagship(s, "org1", seed=7)
+    assert story["execution_state"] == "SUCCEEDED"
+    assert story["recovered_payments"] > 0
+    assert story["net_incremental_paise"] > 0
+    assert story["blocked_execution_state"] == "REJECTED_BY_POLICY"
+    assert story["rollback_execution_state"] == "ROLLED_BACK"
+    from paytwin_api.services.experiments import results as experiment_results
+    measured = experiment_results(db=s, experiment=s.query(Experiment).one())
+    assert measured["intervention_cost_paise"] > 0
+    assert measured["audit_refs"]
     s.close()
     engine.dispose()
 

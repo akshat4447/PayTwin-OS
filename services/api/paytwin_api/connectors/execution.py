@@ -4,9 +4,16 @@ from __future__ import annotations
 from paytwin_api.connectors.base import Capabilities, WebhookRejected
 
 
+class RetryableActionError(RuntimeError):
+    """A provider-side transient where retry is safe but bounded."""
+
+
 def execute_action(connector, kind: str, params: dict, idempotency_key: str,
                    secret: str) -> dict:
     """Dispatch a money-affecting action. Returns outcome dict. Raises on refusal."""
+    fault = str(params.get("failure_mode") or "")
+    if fault in {"timeout", "rate_limit", "provider_5xx"}:
+        raise RetryableActionError(f"transient provider failure: {fault}")
     caps: Capabilities = connector.capabilities()
     needs = {
         "retry_burst": caps.direct_retry,
@@ -21,4 +28,8 @@ def execute_action(connector, kind: str, params: dict, idempotency_key: str,
     fn = getattr(connector, "perform_action", None)
     if fn is None:
         raise WebhookRejected(f"connector {connector.provider} has no perform_action")
-    return fn(kind=kind, params=params, idempotency_key=idempotency_key, secret=secret)
+    outcome = fn(kind=kind, params=params, idempotency_key=idempotency_key, secret=secret)
+    if fault == "partial_success":
+        outcome["partial_success"] = True
+        outcome["partial_reason"] = "provider accepted only a bounded subset"
+    return outcome

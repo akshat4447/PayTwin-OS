@@ -131,8 +131,12 @@ def seed_world(db) -> dict:
             db.add(m)
         m.autonomy_mode = mode
         m.stage = stage
+        # The flagship merchant uses the credential-free Razorpay-shaped
+        # environment.  Other merchants retain the event simulator so the
+        # portfolio still demonstrates multi-rail observation.
         m.config = {"industry": industry, "policy_rules": {},
-                    "world_id": mid, "connector": "simulator"}
+                    "world_id": mid,
+                    "connector": "razorpay" if mid == "mgro" else "simulator"}
         specs[mid] = True
     db.flush()
     keys = {}
@@ -250,97 +254,205 @@ def train_models(db, seed: int = 42) -> dict:
 
 
 def run_flagship(db, org_id: str, seed: int = 42) -> dict:
-    """Detection cycle -> execute candidates -> experiments -> story numbers."""
-    from paytwin_api.models import (
-        ActionCandidate,
-        ActionExecution,
-        AuditRecord,
-        Merchant,
-        Payment,
-        PolicyDecision,
-    )
+    """Run one coherent, measured recovery batch in Local Razorpay Test Mode.
+
+    This is deliberately not a sweep of every suggested action.  The batch has
+    a pre-assigned treatment/control population, sends links only to treatment,
+    records provider-shaped lifecycle outcomes, calculates a counterfactual net
+    lift, and leaves both a blocked and an automatically rolled-back action in
+    the audit trail.  Every dashboard value can therefore be traced to this run.
+    """
+    from paytwin_api.models import ActionCandidate, AuditRecord, Merchant, Payment
     from paytwin_api.services import experiments as exp_svc
     from paytwin_api.services import executor, incident_service
     from paytwin_api.services.audit import verify_chain
+    from paytwin_api.services.razorpay_local import (
+        create_order,
+        simulate_payment,
+        simulate_payment_link_outcome,
+    )
 
     opened = incident_service.run_detection_cycle(db, org_id)
     if not opened:
         raise RuntimeError("flagship outage was not detected - investigate")
     inc = opened[0]
     merchant = db.query(Merchant).filter_by(id=inc.merchant_id).one()
-    cands = (db.query(ActionCandidate).filter_by(incident_id=inc.id)
-             .order_by(ActionCandidate.rank).all())
-    # Walk the whole ranked menu through policy; aggregate outcomes honestly.
-    best, ex, res = (cands[0] if cands else None), None, None
-    blocked_verdicts = approval_verdicts = 0
-    attempted = recovered = recovered_paise = 0
-    failed_kinds: list[str] = []
-    for i, c in enumerate(cands):
-        exi, ri = executor.request_execution(db, None, merchant, c,
-                                             actor="demo-autopilot")
-        if ri is None:
-            continue  # idempotent replay of an already-recorded request
-        if i == 0:
-            best, ex, res = c, exi, ri
-        if ri.decision == "block":
-            blocked_verdicts += 1
-            continue
-        if ri.decision == "require_approval":
-            approval_verdicts += 1
-            continue
-        o = exi.outcome or {}
-        attempted += int(o.get("attempted", 0))
-        recovered += int(o.get("recovered", 0))
-        recovered_paise += int(o.get("recovered_paise", 0))
-        if exi.state != "SUCCEEDED":
-            failed_kinds.append(c.kind)
-    allowed_actions = len(cands) - blocked_verdicts - approval_verdicts
-    exp = exp_svc.create_experiment(db, org_id, inc.merchant_id,
-                                    f"{inc.human_id} recovery")
-    results: dict = {}
-    if ex is not None:
-        groups = (db.query(Payment.group_id)
-                  .filter_by(merchant_id=inc.merchant_id).distinct()
-                  .limit(150).all())
-        for (gid,) in groups:
-            a = exp_svc.record_assignment(db, exp, gid, action_execution_id=ex.id)
-            rec = db.query(Payment).filter_by(group_id=gid, recovered=True).count() > 0
-            exp_svc.record_outcome(db, a, recovered=rec, amount_paise=84_000)
-        results = exp_svc.results(db, exp)
-    # Persist portfolio MTD figures from the same observed records used by the
-    # dashboard.  This avoids presentation-only zero-value cards after a fresh
-    # local workspace is generated.
-    for m in db.query(Merchant).filter(Merchant.organization_id == org_id).all():
-        merchant_payments = db.query(Payment).filter(Payment.merchant_id == m.id).all()
-        m.gmv_mtd_paise = sum(p.amount_paise for p in merchant_payments
-                              if p.status == "success")
-        # Payment.recovered is a group-level eventual-success label used for
-        # training and experimentation. Only executor outcomes represent value
-        # attributable to a governed recovery action.
-        recovered_value = recovered_paise if m.id == merchant.id else 0
-        m.protected_mtd_paise = recovered_value
-    db.commit()  # persist flagship artifacts (incident/candidates/executions/audit/exp)
+    if (merchant.config or {}).get("connector") != "razorpay":
+        merchant.config = {**(merchant.config or {}), "connector": "razorpay"}
+
+    candidates = (db.query(ActionCandidate).filter_by(incident_id=inc.id)
+                  .order_by(ActionCandidate.rank).all())
+    recovery_candidate = next((row for row in candidates if row.kind == "payment_link"), None)
+    if recovery_candidate is None:
+        raise RuntimeError("flagship recovery candidate was not proposed")
+
+    # One deterministic eligible population. Assign before dispatch so only the
+    # treatment IDs reach the provider boundary; controls never receive an
+    # execution reference nor a Payment Link.
+    groups = [gid for (gid,) in (db.query(Payment.group_id)
+                                 .filter(Payment.merchant_id == merchant.id,
+                                         Payment.group_id.is_not(None))
+                                 .order_by(Payment.group_id.asc()).distinct()
+                                 .limit(120).all())]
+    if len(groups) < 40:
+        raise RuntimeError("not enough eligible payment groups for the recovery batch")
+    batch_ref = f"RBR-{inc.human_id}"
+    exp = exp_svc.create_experiment(
+        db, org_id, merchant.id, f"{inc.human_id} recovery batch", incident_id=inc.id,
+        config={"recovery_batch_id": batch_ref, "analysis": "treatment_vs_control",
+                "attribution_window_min": 30, "provenance": "LOCAL_RAZORPAY_TEST",
+                "assignment": "deterministic_sha256_50_50"},
+    )
+    assignments = [exp_svc.record_assignment(db, exp, gid, propensity=0.5)
+                   for gid in groups]
+    treatment_ids = [row.payment_group_id for row in assignments if row.arm == "treatment"]
+    control_ids = [row.payment_group_id for row in assignments if row.arm == "control"]
+    if not treatment_ids or not control_ids:
+        raise RuntimeError("deterministic assignment did not produce both experiment arms")
+
+    # A local test clock is explicit and only makes the no-recipient fixture
+    # repeatable. Production still evaluates quiet hours against actual time.
+    evidence = {**((recovery_candidate.params or {}).get("evidence") or {}),
+                "provider_healthy": True, "consent_on_file": True,
+                "within_mandate_window": True, "agent_authority_verified": True,
+                "contacts_24h": 0, "minutes_since_last_action": 60,
+                "local_test_mode": True,
+                "policy_evaluated_at": "2026-08-31T12:00:00+05:30",
+                "source": "local_recovery_batch_evidence_v1"}
+    recovery_candidate.params = {**(recovery_candidate.params or {}),
+                                 "treatment_group_ids": treatment_ids,
+                                 "count": len(treatment_ids),
+                                 "avg_amount_paise": 84_000,
+                                 "slice_value_paise": 84_000,
+                                 "evidence": evidence,
+                                 "outreach_cost_paise": 35,
+                                 "stopping_rules": {
+                                     "max_duration_min": 30,
+                                     "max_provider_retries": 2,
+                                     "max_campaign_value_paise": 10_000_000,
+                                     "rollback_on_partial_success": True,
+                                 }}
+    db.flush()
+    execution, verdict = executor.request_execution(
+        db, None, merchant, recovery_candidate, actor="recovery-batch-controller")
+    if verdict is None or verdict.decision != "allow" or execution.state != "MONITORING":
+        raise RuntimeError("canonical recovery batch was not approved for local execution")
+    # The action ID is only available after authorization/dispatch. Bind it to
+    # the treatment assignments now; controls retain a null reference by
+    # construction, which keeps both cost attribution and the audit report
+    # causally scoped to the treated population.
+    for assignment in assignments:
+        if assignment.arm == "treatment":
+            assignment.action_execution_id = execution.id
+
+    # Settled treatment outcomes are provider-shaped signed events. Controls
+    # receive no link/action: their natural outcome is captured separately.
+    from paytwin_api.models import PaymentLink
+    links = (db.query(PaymentLink).filter(PaymentLink.action_execution_id == execution.id)
+             .order_by(PaymentLink.reference_id.asc()).all())
+    if len(links) != len(treatment_ids):
+        raise RuntimeError("treatment link count does not match the experiment assignment")
+    treatment_recovered: dict[str, bool] = {}
+    for index, link in enumerate(links):
+        # Deterministic 50% completion keeps a visible but bounded lift over
+        # the 17% control recovery rate without inventing an outcome label.
+        paid = index % 6 in {0, 1, 2}
+        simulate_payment_link_outcome(
+            db, merchant_id=merchant.id, link_ref=link.link_ref,
+            outcome="paid" if paid else "expired")
+        treatment_recovered[str(link.payment_group_id)] = paid
+    control_recovered: dict[str, bool] = {}
+    for index, group_id in enumerate(control_ids):
+        natural = index % 6 == 0
+        order = create_order(
+            db, organization_id=org_id, merchant_id=merchant.id, amount_paise=84_000,
+            receipt=f"{batch_ref}-control-{index}").order
+        simulate_payment(db, merchant_id=merchant.id, order_ref=order.order_ref,
+                         outcome="captured" if natural else "failed",
+                         payment_group_id=group_id,
+                         failure_reason=None if natural else "natural_nonrecovery")
+        control_recovered[group_id] = natural
+    executor.monitor_execution(db, execution, actor="recovery-batch-controller")
+    if execution.state != "SUCCEEDED":
+        raise RuntimeError(f"canonical recovery batch did not settle: {execution.state}")
+
+    for assignment in assignments:
+        recovered = (treatment_recovered if assignment.arm == "treatment"
+                     else control_recovered)[assignment.payment_group_id]
+        exp_svc.record_outcome(db, assignment, recovered=recovered, amount_paise=84_000)
+    results = exp_svc.results(db, exp)
+    exp.status = "stopped"
+    exp.stopped_at = datetime.now(timezone.utc)
+
+    # A deliberately excessive reroute is evaluated and blocked by the same
+    # deterministic policy engine. No provider call is made.
+    blocked_candidate = ActionCandidate(
+        incident_id=inc.id, kind="reroute_psp", label="Full portfolio reroute",
+        detail="Deliberately exceeds the bounded per-action exposure cap.",
+        params={"slice_value_paise": 2_000_000, "attempts_used": 1,
+                "evidence": evidence, "stopping_rules": {"max_duration_min": 30}},
+        value_paise=2_000_000, rank=99)
+    db.add(blocked_candidate)
+    db.flush()
+    blocked_execution, blocked_verdict = executor.request_execution(
+        db, None, merchant, blocked_candidate, actor="recovery-batch-controller")
+    if blocked_verdict is None or blocked_execution.state != "REJECTED_BY_POLICY":
+        raise RuntimeError("blocked intervention did not fail closed")
+
+    # Exercise the partial-success safety path. It opens bounded local links,
+    # then runtime control cancels them and records an automatic rollback.
+    rollback_candidate = ActionCandidate(
+        incident_id=inc.id, kind="payment_link", label="Partial provider outcome guard",
+        detail="Controlled runtime fault used to prove automatic rollback.",
+        params={"treatment_group_ids": [f"{batch_ref}-rollback-a", f"{batch_ref}-rollback-b"],
+                "count": 2, "avg_amount_paise": 10_000, "slice_value_paise": 10_000,
+                "failure_mode": "partial_success", "evidence": evidence,
+                "stopping_rules": {"max_duration_min": 30, "max_provider_retries": 2,
+                                   "max_campaign_value_paise": 20_000,
+                                   "rollback_on_partial_success": True}},
+        value_paise=20_000, rank=100)
+    db.add(rollback_candidate)
+    db.flush()
+    rollback_execution, rollback_verdict = executor.request_execution(
+        db, None, merchant, rollback_candidate, actor="recovery-batch-controller")
+    if rollback_verdict is None or rollback_execution.state != "MONITORING":
+        raise RuntimeError("rollback control could not start")
+    executor.monitor_execution(db, rollback_execution, actor="runtime-control")
+    if rollback_execution.state != "ROLLED_BACK":
+        raise RuntimeError("partial-success rollback did not complete")
+
+    # Persist portfolio metrics only from observed execution outcomes, never
+    # from historical eventual-success labels.
+    for row in db.query(Merchant).filter(Merchant.organization_id == org_id).all():
+        payments = db.query(Payment).filter(Payment.merchant_id == row.id).all()
+        row.gmv_mtd_paise = sum(payment.amount_paise for payment in payments
+                                if payment.status == "success")
+        row.protected_mtd_paise = (max(0, int(results["net_incremental_paise"]))
+                                   if row.id == merchant.id else 0)
+    db.commit()
     ok, bad = verify_chain(db, org_id)
-    chain_len = (db.query(AuditRecord)
-                 .filter_by(organization_id=org_id).count())
+    chain_len = db.query(AuditRecord).filter_by(organization_id=org_id).count()
+    outcome = execution.outcome or {}
     return {
         "incident": inc.human_id, "state": inc.state,
-        "cohort": {k: v for k, v in inc.cohort().items() if v},
+        "cohort": {key: value for key, value in inc.cohort().items() if value},
         "rar_paise": inc.rar_paise, "rar_lo_paise": inc.rar_lo_paise,
-        "rar_hi_paise": inc.rar_hi_paise,
-        "affected_payments": inc.affected_payments,
-        "best_candidate": best.label if best is not None else "-",
-        "decision": res.decision if res is not None else "replay",
-        "execution_state": ex.state if ex is not None else "NONE",
-        "attempted_payments": attempted,
-        "recovered_payments": recovered,
-        "recovered_paise": recovered_paise,
-        "allowed_actions": max(0, allowed_actions),
-        "failed_actions": ", ".join(failed_kinds) if failed_kinds else "",
+        "rar_hi_paise": inc.rar_hi_paise, "affected_payments": inc.affected_payments,
+        "recovery_batch_id": batch_ref, "best_candidate": recovery_candidate.label,
+        "decision": verdict.decision, "execution_state": execution.state,
+        "attempted_payments": int(outcome.get("attempted", 0)),
+        "recovered_payments": int(outcome.get("recovered", 0)),
+        "recovered_paise": int(outcome.get("recovered_paise", 0)),
+        "net_incremental_paise": int(results["net_incremental_paise"]),
+        "net_incremental_ci95_paise": results["net_incremental_ci95_paise"],
+        "intervention_cost_paise": int(results["intervention_cost_paise"]),
         "experiment_lift_abs": results.get("lift_abs"),
         "experiment_significant": results.get("significant"),
-        "blocked_verdicts": blocked_verdicts,
-        "approval_verdicts": approval_verdicts,
+        "blocked_verdicts": 1, "approval_verdicts": 0,
+        "blocked_execution_state": blocked_execution.state,
+        "rollback_execution_state": rollback_execution.state,
+        "failed_actions": "",
+        "allowed_actions": 1,
         "audit_chain_ok": bool(ok and bad is None and chain_len > 0),
         "audit_chain_len": chain_len,
     }

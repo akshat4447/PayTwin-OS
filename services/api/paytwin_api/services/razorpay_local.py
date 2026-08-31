@@ -15,11 +15,12 @@ import json
 import secrets
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
 from paytwin_api.config import get_settings
-from paytwin_api.models import Integration, Merchant, Order, Payment
+from paytwin_api.models import Integration, Merchant, Order, Payment, PaymentLink
 from paytwin_api.services.ingest import _secrets_for, ingest_webhook
 
 PROVENANCE = "LOCAL_RAZORPAY_TEST"
@@ -33,6 +34,13 @@ class LocalProviderError(ValueError):
 class LocalOrderResult:
     order: Order
     provider_order: dict
+
+
+@dataclass(frozen=True)
+class LocalPaymentLinkResult:
+    link: PaymentLink
+    order: Order
+    provider_link: dict
 
 
 def _id(prefix: str) -> str:
@@ -70,6 +78,29 @@ def _order_payload(order: Order) -> dict:
     }
 
 
+def _link_payload(link: PaymentLink, order: Order) -> dict:
+    """Return the useful Razorpay-shaped subset without retaining PII."""
+    notify = {"email": link.channel == "email", "sms": link.channel == "sms",
+              "whatsapp": link.channel == "whatsapp"}
+    return {
+        "id": link.link_ref,
+        "entity": "payment_link",
+        "amount": link.amount_paise,
+        "amount_paid": link.amount_paid_paise,
+        "currency": link.currency,
+        "reference_id": link.reference_id,
+        "notes": {"paytwin_group_id": link.payment_group_id} if link.payment_group_id else {},
+        "status": link.status,
+        "short_url": f"https://rzp.local/{link.link_ref}",
+        "order_id": order.order_ref,
+        "notify": notify,
+        "reminder_enable": link.reminder_enabled,
+        "expire_by": int(link.expires_at.timestamp()) if link.expires_at else 0,
+        "created_at": int(link.created_at.timestamp()),
+        "environment": PROVENANCE,
+    }
+
+
 def create_order(db: Session, *, organization_id: str, merchant_id: str,
                  amount_paise: int, receipt: str | None,
                  currency: str = "INR") -> LocalOrderResult:
@@ -100,9 +131,52 @@ def create_order(db: Session, *, organization_id: str, merchant_id: str,
     return LocalOrderResult(order, _order_payload(order))
 
 
+def create_payment_link(
+    db: Session, *, organization_id: str, merchant_id: str, amount_paise: int,
+    reference_id: str | None, payment_group_id: str | None = None,
+    action_execution_id: str | None = None, channel: str = "whatsapp",
+    reminder_enabled: bool = False, expires_after_min: int = 30,
+) -> LocalPaymentLinkResult:
+    """Issue a bounded local Payment Link and retain a recovery attribution key."""
+    if channel not in {"whatsapp", "sms", "email"}:
+        raise LocalProviderError("channel must be whatsapp, sms, or email")
+    if not 5 <= int(expires_after_min) <= 1_440:
+        raise LocalProviderError("expires_after_min must be between 5 and 1440")
+    reference = (reference_id or f"recovery-{secrets.token_hex(8)}").strip()
+    if not reference or len(reference) > 80:
+        raise LocalProviderError("reference_id must contain 1 to 80 characters")
+    existing = (db.query(PaymentLink)
+                .filter(PaymentLink.organization_id == organization_id,
+                        PaymentLink.merchant_id == merchant_id,
+                        PaymentLink.reference_id == reference).one_or_none())
+    if existing is not None:
+        order = db.query(Order).filter(Order.id == existing.order_id).one()
+        if existing.amount_paise != amount_paise:
+            raise LocalProviderError("reference_id is already used with a different amount")
+        return LocalPaymentLinkResult(existing, order, _link_payload(existing, order))
+    receipt = f"plink-{reference}"[:80]
+    order_result = create_order(
+        db, organization_id=organization_id, merchant_id=merchant_id,
+        amount_paise=amount_paise, receipt=receipt,
+    )
+    link = PaymentLink(
+        organization_id=organization_id, merchant_id=merchant_id, provider="razorpay",
+        link_ref=_id("plink"), reference_id=reference, order_id=order_result.order.id,
+        action_execution_id=action_execution_id, payment_group_id=payment_group_id,
+        amount_paise=amount_paise, currency=order_result.order.currency,
+        channel=channel, reminder_enabled=bool(reminder_enabled),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=int(expires_after_min)),
+        status="issued",
+    )
+    db.add(link)
+    db.flush()
+    return LocalPaymentLinkResult(link, order_result.order, _link_payload(link, order_result.order))
+
+
 def _payment_payload(*, order: Order, payment_ref: str, outcome: str,
                      method: str, bank: str | None, vpa: str | None,
-                     failure_reason: str | None) -> tuple[dict, dict]:
+                     failure_reason: str | None,
+                     payment_group_id: str | None = None) -> tuple[dict, dict]:
     now = int(time.time())
     payment = {
         "id": payment_ref,
@@ -116,6 +190,8 @@ def _payment_payload(*, order: Order, payment_ref: str, outcome: str,
         "vpa": vpa,
         "created_at": now,
     }
+    if payment_group_id:
+        payment["notes"] = {"paytwin_group_id": payment_group_id}
     if outcome == "failed":
         payment.update({
             "error_source": "bank",
@@ -131,7 +207,8 @@ def _payment_payload(*, order: Order, payment_ref: str, outcome: str,
 def simulate_payment(db: Session, *, merchant_id: str, order_ref: str,
                      outcome: str, method: str = "upi", bank: str | None = "HDFC",
                      vpa: str | None = "local@upi",
-                     failure_reason: str | None = None) -> dict:
+                     failure_reason: str | None = None,
+                     payment_group_id: str | None = None) -> dict:
     """Emit a signed local Razorpay payment webhook through normal ingestion."""
     if outcome not in {"captured", "failed", "authorized"}:
         raise LocalProviderError("outcome must be captured, failed, or authorized")
@@ -146,6 +223,7 @@ def simulate_payment(db: Session, *, merchant_id: str, order_ref: str,
     payload, payment = _payment_payload(
         order=order, payment_ref=payment_ref, outcome=outcome, method=method,
         bank=bank, vpa=vpa if method == "upi" else None, failure_reason=failure_reason,
+        payment_group_id=payment_group_id,
     )
     raw = json.dumps(payload, separators=(",", ":")).encode()
     signature = hmac.new(_webhook_secret(db, merchant_id).encode(), raw,
@@ -170,6 +248,114 @@ def simulate_payment(db: Session, *, merchant_id: str, order_ref: str,
             "razorpay_signature": checkout_signature,
         } if outcome == "captured" else None),
     }
+
+
+def _emit_payment_link_webhook(db: Session, link: PaymentLink, order: Order,
+                               outcome: str, payment: dict | None = None) -> dict:
+    """Send a real signed Razorpay-shaped Payment Link delivery through ingress."""
+    now = int(time.time())
+    if payment is None:
+        payment = {
+            "id": f"pay_link_{link.link_ref[-18:]}", "entity": "payment",
+            "amount": 0, "currency": link.currency, "status": "failed",
+            "order_id": order.order_ref, "method": "upi", "created_at": now,
+            "error_reason": outcome,
+        }
+    event = {
+        "paid": "payment_link.paid",
+        "partially_paid": "payment_link.partially_paid",
+        "expired": "payment_link.expired",
+        "cancelled": "payment_link.cancelled",
+    }[outcome]
+    payload = {
+        "event": event,
+        "payload": {
+            "payment_link": {"entity": _link_payload(link, order)},
+            "order": {"entity": _order_payload(order)},
+            "payment": {"entity": payment},
+        },
+    }
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    signature = hmac.new(_webhook_secret(db, link.merchant_id).encode(), raw,
+                         hashlib.sha256).hexdigest()
+    event_id = _id("evt")
+    result = ingest_webhook(db, "razorpay", link.merchant_id, raw, signature,
+                            headers={"x-razorpay-event-id": event_id})
+    if result.status != 200:
+        raise RuntimeError(f"local payment-link webhook was rejected: {result.body}")
+    return {"event_id": event_id, "event": event, "result": result.body}
+
+
+def simulate_payment_link_outcome(
+    db: Session, *, merchant_id: str, link_ref: str, outcome: str,
+    amount_paid_paise: int | None = None,
+) -> dict:
+    """Advance a local Payment Link and emit the matching signed webhook.
+
+    A ``paid`` result creates a captured payment through the normal checkout
+    lifecycle first. Partial/cancelled/expired outcomes are still delivered as
+    provider-shaped webhooks but do not claim recovered revenue.
+    """
+    if outcome not in {"paid", "partially_paid", "expired", "cancelled"}:
+        raise LocalProviderError("outcome must be paid, partially_paid, expired, or cancelled")
+    link = (db.query(PaymentLink)
+            .filter(PaymentLink.merchant_id == merchant_id,
+                    PaymentLink.provider == "razorpay", PaymentLink.link_ref == link_ref)
+            .one_or_none())
+    if link is None:
+        raise LocalProviderError("payment link not found")
+    order = db.query(Order).filter(Order.id == link.order_id).one()
+    if link.status in {"paid", "cancelled", "expired"}:
+        raise LocalProviderError(f"payment link is already {link.status}")
+    now = datetime.now(timezone.utc)
+    if link.expires_at is not None and link.expires_at.replace(tzinfo=timezone.utc) < now \
+            and outcome not in {"expired", "cancelled"}:
+        raise LocalProviderError("payment link has expired")
+
+    payment = None
+    if outcome == "paid":
+        captured = simulate_payment(db, merchant_id=merchant_id, order_ref=order.order_ref,
+                                    outcome="captured", method="upi", bank="HDFC",
+                                    vpa="recovery@upi", payment_group_id=link.payment_group_id)
+        payment = captured["payment"]
+        link.amount_paid_paise = link.amount_paise
+        link.status = "paid"
+        link.terminal_reason = "captured_payment"
+    elif outcome == "partially_paid":
+        amount = int(amount_paid_paise or 0)
+        if not 1 <= amount < link.amount_paise:
+            raise LocalProviderError("partial payment must be between 1 and the link amount - 1")
+        link.amount_paid_paise = max(link.amount_paid_paise, amount)
+        link.status = "partially_paid"
+        payment = {
+            "id": f"pay_link_{link.link_ref[-18:]}", "entity": "payment",
+            "amount": amount, "currency": link.currency, "status": "authorized",
+            "order_id": order.order_ref, "method": "upi", "bank": "HDFC",
+            "created_at": int(time.time()),
+        }
+    else:
+        link.status = outcome
+        link.terminal_reason = outcome
+
+    db.flush()
+    webhook = _emit_payment_link_webhook(db, link, order, outcome, payment)
+    return {"provenance": PROVENANCE, "payment_link": _link_payload(link, order),
+            "webhook": webhook, "payment": payment}
+
+
+def cancel_open_payment_links(db: Session, *, action_execution_id: str,
+                              reason: str) -> int:
+    """Cancel outstanding local links when a recovery action is halted/rolled back."""
+    links = (db.query(PaymentLink)
+             .filter(PaymentLink.action_execution_id == action_execution_id,
+                     PaymentLink.status.in_(("issued", "partially_paid"))).all())
+    for link in links:
+        order = db.query(Order).filter(Order.id == link.order_id).one()
+        link.status = "cancelled"
+        link.terminal_reason = reason[:160]
+        db.flush()
+        _emit_payment_link_webhook(db, link, order, "cancelled")
+    return len(links)
 
 
 def simulate_refund(db: Session, *, merchant_id: str, payment_ref: str,

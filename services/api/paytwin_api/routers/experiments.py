@@ -35,7 +35,6 @@ def detail(experiment_id: str, p: Principal = Depends(current_principal),
     if e is None:
         return err(404, "not_found", f"experiment {experiment_id}")
     r = experiment_results(db, e)
-    return {"id": e.id, "name": e.name, "status": e.status, "arms": r["n"],
-            "recovery_rate": r["recovery_rate"], "lift_abs": r.get("lift_abs"),
-            "lift_pct": round(r.get("lift_abs", 0.0) * 100, 2),
-            "ci95": r.get("ci95"), "significant": r.get("significant")}
+    return {"id": e.id, "name": e.name, "status": e.status,
+            "started_at": e.started_at.isoformat(), **r,
+            "lift_pct": round(r.get("lift_abs", 0.0) * 100, 2)}
