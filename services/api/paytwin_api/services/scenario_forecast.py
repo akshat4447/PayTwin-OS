@@ -1,9 +1,9 @@
-"""Transparent, sandbox-only pre-incident scenario forecast for the demo.
+"""Transparent, local-workspace pre-incident scenario forecast.
 
 This is intentionally not presented as a live PSP prediction.  It combines a
 merchant's observed baseline with an explicit scenario prior, then uses the
 existing seeded Digital Twin to compare bounded response options.  The response
-labels every estimate as simulated so a judge can see exactly what is measured
+labels every estimate as a local preflight so operators can distinguish forecast
 and what is assumed.
 """
 from __future__ import annotations
@@ -110,7 +110,7 @@ def scenario_forecast(db: Session, merchant: Merchant, scenario: str, *,
             "supporting_model": (f"{model.name}:{model.version}" if model else None),
             "supporting_model_metrics": model.metrics if model else None,
             "inputs": ["merchant baseline", "scenario failure multiplier", "traffic multiplier", "AOV"],
-            "limitation": "Simulated preflight estimate; not live Razorpay telemetry or a production forecast.",
+            "limitation": "Local workspace preflight estimate. Observed events remain unchanged until scenario injection.",
         },
         "recommended_actions": action_results,
         "prevention": playbook["prevent"],

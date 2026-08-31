@@ -166,6 +166,26 @@ class TestTenancy:
         assert len(body["pulse"]) == 16
         assert body["metrics"]["sr_bp"] == 9000  # 60 rows, every 10th fails
 
+    def test_overview_keeps_recovery_money_separate_from_payment_count(
+            self, client, keys, seeded, db):
+        db.add(ActionExecution(
+            organization_id="org1", merchant_id="mer1", kind="reroute_psp",
+            idempotency_key="overview-recovery-metrics", state="SUCCEEDED",
+            outcome={"recovered": 4, "recovered_paise": 336_000},
+        ))
+        # This label means eventual success within a payment group. It must not
+        # inflate the dashboard's recovery-revenue metric.
+        db.query(Payment).filter_by(merchant_id="mer1", payment_ref="p1").update(
+            {"recovered": True})
+        db.commit()
+
+        body = client.get("/api/overview?scope=mer1", headers=_h(keys["admin1"])).json()
+        metrics = body["metrics"]
+        assert metrics["recovered_payments"] == 4
+        assert metrics["recovered_paise"] == 336_000
+        assert metrics["protected_paise"] >= 336_000
+        assert metrics["retries_avoided"] == 4  # compatibility field remains a count
+
 
 class TestExecute:
     def test_finance_viewer_403(self, client, keys, seeded):
@@ -198,6 +218,10 @@ class TestExecute:
                          headers=_h(keys["admin1"]))
         assert r2.json()["execution_id"] == body["execution_id"]
         assert db_exec_count() == 1
+        detail = client.get(f"/api/incidents/{seeded['incident']}",
+                            headers=_h(keys["admin1"])).json()
+        candidate = next(c for c in detail["candidates"] if c["id"] == seeded["cand_ok"])
+        assert candidate["execution"]["state"] == "SUCCEEDED"
 
     def test_sse_emits_on_action(self, client, keys, seeded):
         q = bus.subscribe("org1")
@@ -355,7 +379,7 @@ class TestModelsCommanderAuditReportsChaos:
         assert body["forecast"]["traffic_multiplier"] == 4.0
         assert body["forecast"]["projected_failure_rate"] > body["forecast"]["baseline_failure_rate"]
         assert len(body["recommended_actions"]) == 4
-        assert "not live Razorpay telemetry" in body["risk_model"]["limitation"]
+        assert "Local workspace preflight" in body["risk_model"]["limitation"]
 
         injected = client.post("/api/chaos/surge_bank_failure",
                                json={"scope": "mer1", "duration_min": 1, "seed": 77},

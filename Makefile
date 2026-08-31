@@ -55,7 +55,7 @@ razorpay-demo:
 	PAYTWIN_DEMO_RESET=1 PAYTWIN_DEMO_HOURS=$${PAYTWIN_DEMO_HOURS:-1.5} PAYTWIN_SEED=$${PAYTWIN_SEED:-42} \
 	PAYTWIN_DATABASE_URL=$${PAYTWIN_RAZORPAY_DEMO_URL:-sqlite:///$(CURDIR)/data/razorpay-hackathon.db} \
 		$(PY) scripts/razorpay_demo.py
-	@echo "RAZORPAY_TEST_MODE_DEMO.md written. Start 'make razorpay-api' and use the risk_admin key printed above."
+	@echo "RAZORPAY_TEST_MODE_WORKSPACE.md written. Start 'make razorpay-api' and use the risk_admin key printed above."
 
 razorpay-api:
 	PAYTWIN_DATABASE_URL=$${PAYTWIN_RAZORPAY_DEMO_URL:-sqlite:///$(CURDIR)/data/razorpay-hackathon.db} \

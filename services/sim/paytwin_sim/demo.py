@@ -307,6 +307,18 @@ def run_flagship(db, org_id: str, seed: int = 42) -> dict:
             rec = db.query(Payment).filter_by(group_id=gid, recovered=True).count() > 0
             exp_svc.record_outcome(db, a, recovered=rec, amount_paise=84_000)
         results = exp_svc.results(db, exp)
+    # Persist portfolio MTD figures from the same observed records used by the
+    # dashboard.  This avoids presentation-only zero-value cards after a fresh
+    # local workspace is generated.
+    for m in db.query(Merchant).filter(Merchant.organization_id == org_id).all():
+        merchant_payments = db.query(Payment).filter(Payment.merchant_id == m.id).all()
+        m.gmv_mtd_paise = sum(p.amount_paise for p in merchant_payments
+                              if p.status == "success")
+        # Payment.recovered is a group-level eventual-success label used for
+        # training and experimentation. Only executor outcomes represent value
+        # attributable to a governed recovery action.
+        recovered_value = recovered_paise if m.id == merchant.id else 0
+        m.protected_mtd_paise = recovered_value
     db.commit()  # persist flagship artifacts (incident/candidates/executions/audit/exp)
     ok, bad = verify_chain(db, org_id)
     chain_len = (db.query(AuditRecord)

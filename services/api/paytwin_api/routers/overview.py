@@ -56,13 +56,33 @@ def overview(p: Principal = Depends(current_principal), db: Session = Depends(ge
     if mer_id:
         open_q = open_q.filter(Incident.merchant_id == mer_id)
     open_inc = open_q.all()
-    recovered = sum((r.outcome or {}).get("recovered", 0)
-                    for r in db.query(ActionExecution)
-                    .filter(ActionExecution.organization_id == p.organization_id,
-                            ActionExecution.state == "SUCCEEDED").all())
-    protected = sum(m.protected_mtd_paise for m in
-                    db.query(Merchant).filter(
-                        Merchant.organization_id == p.organization_id).all())
+    executions = (db.query(ActionExecution)
+                  .filter(ActionExecution.organization_id == p.organization_id,
+                          ActionExecution.state == "SUCCEEDED"))
+    if mer_id:
+        executions = executions.filter(ActionExecution.merchant_id == mer_id)
+    succeeded = executions.all()
+    # Counts and money are intentionally reported as separate fields.  The old
+    # dashboard contract exposed a recovered-payment count as ``retries_avoided``;
+    # formatting that count as INR produced values such as "Recovered ₹4".
+    recovered_payments = sum(int((r.outcome or {}).get("recovered", 0))
+                             for r in succeeded)
+    action_recovered_paise = sum(int((r.outcome or {}).get("recovered_paise", 0))
+                                 for r in succeeded)
+    # Payment.recovered is an eventual-success training label at group level;
+    # it is not attributable revenue from a governed recovery action. The
+    # dashboard must report the latter only, otherwise ordinary successful
+    # payment history can be misrepresented as money recovered by PayTwin.
+    recovered_paise = action_recovered_paise
+
+    merchants_q = db.query(Merchant).filter(Merchant.organization_id == p.organization_id)
+    if mer_id:
+        merchants_q = merchants_q.filter(Merchant.id == mer_id)
+    configured_protected = sum(m.protected_mtd_paise for m in merchants_q.all())
+    # Older local workspaces predate the persisted protected-MTD field.  Their
+    # observed recovered value remains an honest lower-bound until the workspace
+    # is regenerated with the current seed.
+    protected = max(configured_protected, recovered_paise)
 
     now = datetime.now(timezone.utc)
     pulse = []
@@ -89,7 +109,12 @@ def overview(p: Principal = Depends(current_principal), db: Session = Depends(ge
         "metrics": {"gmv_mtd_paise": gmv, "sr_bp": overall,
                     "rar_paise": sum(i.rar_paise for i in open_inc),
                     "protected_paise": protected,
-                    "active_incidents": len(open_inc), "retries_avoided": recovered},
+                    "active_incidents": len(open_inc),
+                    "recovered_payments": recovered_payments,
+                    "recovered_paise": recovered_paise,
+                    # Compatibility for existing API consumers.  This is a count,
+                    # not currency; new clients should use recovered_payments.
+                    "retries_avoided": recovered_payments},
         "pulse": pulse,
         "series": {"labels": labels, "values": vals},
         "incidents": [{"human_id": i.human_id, "sev": i.sev, "title": i.title,

@@ -187,12 +187,34 @@ def main() -> int:
             wait_for("corrected handler verifies", lambda: cdp.evaluate(
                 "document.body.innerText.includes('Correction verified') && document.body.innerText.includes('ONE FULFILMENT VERIFIED')"))
 
+            initial_scroll = cdp.evaluate(
+                "const page = document.querySelector('article.page'); page.scrollTop = 500; page.scrollTop")
+            if not isinstance(initial_scroll, (int, float)) or initial_scroll < 100:
+                raise AssertionError("Reliability Lab did not become scrollable")
+            # The connected workspace refreshes every five seconds. A refresh must
+            # update data in-place: it must neither return an operator to the top
+            # nor remount the page (which visibly flickers every card).
+            cdp.evaluate(
+                "window.__paytwinPageRef = document.querySelector('article.page'); "
+                "window.__paytwinScrollProbe = null; "
+                "setTimeout(() => { window.__paytwinScrollProbe = document.querySelector('article.page').scrollTop; }, 5500); true")
+            wait_for("scroll probe after live refresh", lambda: cdp.evaluate(
+                "window.__paytwinScrollProbe !== null"), timeout=8)
+            preserved_scroll = cdp.evaluate("window.__paytwinScrollProbe")
+            if not isinstance(preserved_scroll, (int, float)) or preserved_scroll < 100:
+                raise AssertionError("live refresh reset the document scroll position")
+            print("PASS scroll position survives live refresh")
+            if not cdp.evaluate(
+                    "window.__paytwinPageRef === document.querySelector('article.page')"):
+                raise AssertionError("live refresh remounted the page instead of updating in place")
+            print("PASS live refresh updates in place")
+
             cdp.evaluate("document.querySelector('[data-p=\"overview\"]').click(); true")
             wait_for("Command Center restored", lambda: cdp.evaluate(
                 "document.querySelector('.page h1').innerText.includes('Organization view')"))
             cdp.evaluate("document.querySelector('[data-act=\"launchFlow\"]').click(); true")
             wait_for("operational flow opens Twin Lab", lambda: cdp.evaluate(
-                "document.querySelector('.page h1').innerText.includes('Simulation lab')"))
+                "document.querySelector('.page h1').innerText.includes('Scenario Lab')"))
             wait_for("served forecast completes", lambda: cdp.evaluate(
                 "document.body.innerText.includes('Pre-incident scenario forecast')"), timeout=20)
 

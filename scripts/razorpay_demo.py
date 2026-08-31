@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the repeatable, sandbox-only Razorpay hackathon demo.
+"""Build the repeatable, sandbox-only Razorpay Test Mode workspace.
 
 The script first builds the existing PayTwin flagship story (detection, RCA,
 RaR, Twin, policy, action simulation, measurement and audit).  It then runs
@@ -19,7 +19,7 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 def _markdown(report: dict) -> str:
     verdict = "READY" if report["passed"] else "BLOCKED"
     lines = [
-        "# PayTwin × Razorpay — Test Mode Demo",
+        "# PayTwin × Razorpay — Test Mode Workspace",
         "",
         "> **SANDBOX ONLY.** Synthetic Razorpay-shaped, HMAC-signed events run through "
         "PayTwin's real ingestion and payment-state paths. No network call or money movement occurs.",
@@ -37,7 +37,7 @@ def _markdown(report: dict) -> str:
         "1. **Observe and detect:** seeded payment traffic includes a controlled issuer/UPI outage.",
         "2. **Diagnose and quantify:** PayTwin opens an incident, ranks the cohort root cause, "
         "and reports Revenue at Risk with an interval.",
-        "3. **Simulate and govern:** the Digital Twin ranks safe responses; the versioned policy "
+        "3. **Rehearse and govern:** the Digital Twin ranks safe responses; the versioned policy "
         "engine blocks or requires approval before the simulator executor acts.",
         "4. **Measure and explain:** control/treatment outcomes, hash-chained audit, and the "
         "evidence-grounded Commander remain available in the UI.",
@@ -45,13 +45,13 @@ def _markdown(report: dict) -> str:
         "late-authorization, partial-refund, and failed-refund scenarios exercise the actual "
         "webhook pipeline.",
         "",
-        "Open the UI after starting the API with the development risk-admin key printed by the demo.",
+        "Open the UI after starting the API with the development risk-admin key printed during workspace setup.",
     ])
     return "\n".join(lines) + "\n"
 
 
 def main() -> int:
-    # Do not allow the demo command to accidentally turn on external actions.
+    # Do not allow the local workspace command to accidentally turn on external actions.
     os.environ["PAYTWIN_ALLOW_REAL_EXECUTION"] = "false"
     os.environ.setdefault("PAYTWIN_ENV", "development")
     # 90 minutes gives the detector its two observation windows while keeping
@@ -61,7 +61,7 @@ def main() -> int:
 
     from paytwin_sim import demo
 
-    print("1/2 Building the PayTwin intelligence demo…")
+    print("1/2 Building the PayTwin intelligence workspace…")
     demo.main()
     print("2/2 Running Razorpay Test Mode runtime verification…")
     db = demo.make_db()
@@ -73,7 +73,7 @@ def main() -> int:
     finally:
         db.close()
 
-    output = REPO / "RAZORPAY_TEST_MODE_DEMO.md"
+    output = REPO / "RAZORPAY_TEST_MODE_WORKSPACE.md"
     output.write_text(_markdown(report))
     print(output.read_text())
     print("UI: start `make razorpay-api`, then open http://localhost:8000/#key=<risk_admin key>")

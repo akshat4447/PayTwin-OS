@@ -185,6 +185,14 @@ def detail(human_id: str, p: Principal = Depends(current_principal),
         for r in db.query(RootCauseCandidate)
         .filter(RootCauseCandidate.incident_id == inc.id)
         .order_by(RootCauseCandidate.rank).all()]
+    executions = (db.query(ActionExecution)
+                  .filter(ActionExecution.incident_id == inc.id)
+                  .order_by(ActionExecution.created_at.desc()).all())
+    latest_execution_by_candidate = {}
+    for execution in executions:
+        if execution.candidate_id and execution.candidate_id not in latest_execution_by_candidate:
+            latest_execution_by_candidate[execution.candidate_id] = execution
+
     cands = []
     for c in (db.query(ActionCandidate).filter(ActionCandidate.incident_id == inc.id)
               .order_by(ActionCandidate.rank).all()):
@@ -197,10 +205,15 @@ def detail(human_id: str, p: Principal = Depends(current_principal),
                 c.params.get("amount_cap_paise", c.value_paise or 0))),
             attempts_used=int(c.params.get("attempts_used", 1)),
         ))
+        execution = latest_execution_by_candidate.get(c.id)
         cands.append({"id": c.id, "kind": c.kind, "label": c.label,
                       "detail": c.detail, "ev_paise": c.ev_paise,
                       "p_succ_delta": c.p_succ_delta,
-                      "policy": verdict.decision})
+                      "policy": verdict.decision,
+                      "execution": ({"id": execution.id,
+                                     "human_id": execution.human_id,
+                                     "state": execution.state}
+                                    if execution else None)})
     evidence = [{"kind": e.kind, "ref": e.ref, "summary": e.summary}
                 for e in db.query(IncidentEvidence)
                 .filter_by(incident_id=inc.id).all()]

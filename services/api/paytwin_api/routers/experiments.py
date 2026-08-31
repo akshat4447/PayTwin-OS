@@ -20,7 +20,10 @@ def list_experiments(p: Principal = Depends(current_principal),
         q = q.filter(Experiment.merchant_id == scope)
     rows = q.order_by(Experiment.started_at.desc()).limit(50).all()
     return [{"id": e.id, "name": e.name, "status": e.status,
-             "started_at": e.started_at.isoformat()} for e in rows]
+             "started_at": e.started_at.isoformat(),
+             # The list view is used in the operating workspace, so it includes
+             # the same measured treatment/control summary as the detail route.
+             "summary": experiment_results(db, e)} for e in rows]
 
 
 @router.get("/{experiment_id}")
