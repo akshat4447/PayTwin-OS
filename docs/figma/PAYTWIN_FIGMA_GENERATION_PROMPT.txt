@@ -1,0 +1,188 @@
+Create a new Figma page named "PayTwin — Video Story" with seven fully editable desktop frames. Build every element as editable Figma layers; do not use screenshots, rasterised UI, stock images, gradients, glossy 3D art, generic SaaS imagery, or decorative AI-style artwork.
+
+SOURCE OF TRUTH
+This is a composed story sequence for PayTwin OS, an AI Revenue Recovery Control Plane for payments. It must feel like the current PayTwin light-theme product: precise, quiet, trustworthy, operational, and Indian payments-native. Use the visual rules and exact text below. The result should be ready to animate in Jitter.
+
+CANVAS
+- 1920 × 1080 px, desktop 16:9, one frame per story beat.
+- Place frames in one horizontal row, 160 px apart.
+- Use the exact frame names specified below.
+- Safe area: 112 px from the left/right and 88 px from the top/bottom.
+- Use Auto Layout for every card, chip, metric group, and horizontal sequence. Do not flatten groups.
+- All copy must remain editable.
+
+TYPE
+- Font: Inter. Use JetBrains Mono only for labels, IDs, audit references, time, and compact metrics.
+- Display 64/72, weight 750, letter spacing -1.8.
+- H1 44/52, weight 750, letter spacing -1.0.
+- H2 27/34, weight 700, letter spacing -0.45.
+- Card title 18/24, weight 700.
+- Body 18/28, weight 400.
+- Label 12/16, weight 700, uppercase, letter spacing 1.5.
+- Mono 12/18, JetBrains Mono, weight 500.
+
+LIGHT THEME TOKENS (match PayTwin OS exactly)
+- Background: #F7F8FB
+- Background soft: #F0F3F8
+- Panel: #FFFFFF
+- Panel soft: #F7F9FC
+- Panel muted: #E9EEF6
+- Ink: #111827
+- Muted text: #425067
+- Dim text: #66758B
+- Border: #DCE3ED
+- Border strong: #BDC9D9
+- Primary: #4055D5
+- Secondary: #6957CF
+- Success: #087A55
+- Success soft: #EAF7F1
+- Warning: #9A6100
+- Warning soft: #FBF4E7
+- Danger: #C92D43
+- Danger soft: #FCEDEF
+- Cyan: #087F99
+- Shadow: 0 10 28 rgba(15,23,42,0.10)
+- Card corner radius: 18. Small chip radius: 999. Button radius: 10.
+
+GLOBAL VISUAL LANGUAGE
+- White/near-white field with thin cool-gray dividers and understated cards.
+- Use a 1 px #DCE3ED border around cards. Use shadow only on main cards, never on every small item.
+- Primary actions are #4055D5 with white text; secondary actions are white with #BDC9D9 borders.
+- Use thin blue connector lines for flows. Use status dots and concise chips, not large illustrations.
+- Add a compact PayTwin masthead at upper left of every frame: a 32 px rounded indigo shield-mark tile, then "paytwin" in Inter 20 bold and "OS" in 10 px spaced gray uppercase. Add a subtle right-side status pill reading "CONTROL PLANE · READY" with a green dot.
+- Keep visual density similar to the actual PayTwin app. Avoid oversized empty spaces, but leave sufficient white space around the headline.
+- Do not show the word “demo” anywhere inside the frames.
+- Do not claim a live Razorpay account or real provider execution. When provider context is needed, use a small provenance chip: "Local Test Mode · Razorpay-shaped lifecycle".
+
+REUSABLE COMPONENTS TO CREATE ON THE PAGE OR IN A "Components" section
+1. StatusChip / success, warning, danger, neutral.
+2. Button / primary and secondary.
+3. MetricCard / label, value, helper.
+4. StepCard / number, title, caption, state=default|active|complete.
+5. EvidenceCard / eyebrow, title, body, meta.
+6. PolicyCard / recommended|review|blocked.
+7. Thin FlowConnector / horizontal.
+Use instances throughout the seven frames rather than redrawing repeated patterns.
+
+FRAME 01 — "01 — Opening / PayTwin"
+Purpose: Establish the product and business outcome in the first 5–7 seconds.
+Layout:
+- Masthead at x112 y88.
+- At x112 y242, small blue mono label: "AI REVENUE RECOVERY CONTROL PLANE".
+- Large headline across two lines: "Detect revenue at risk.\nRecover safely. Prove the impact."
+- Supporting text below: "PayTwin closes the loop from payment signal to a bounded recovery outcome — with policy controls, measurable lift, and an audit trail."
+- At x112 y580, a horizontal 3-step system in three white cards with blue connectors:
+  01 Detect — "Find the failing cohort before revenue is lost"
+  02 Recover — "Choose a bounded, compliant intervention"
+  03 Prove — "Measure net incremental GMV against control"
+- On the right, create a 492 × 398 main panel at x1316 y260. Header: "Recovery batch · RB-20260830-01", with green status chip "COMPLETED". Show a large metric "₹16.5K" with label "net incremental GMV". Under it show three small metrics: "58 treated", "62 control", "95% CI ₹8.7K–₹24.4K". Footer row: "0 unsafe executions" with green check and "AUD-REC-5001" in mono.
+
+FRAME 02 — "02 — Revenue risk"
+Purpose: Explain the business problem quickly and concretely.
+Layout:
+- Masthead and status pill.
+- Blue eyebrow: "THE REVENUE GAP".
+- Headline: "Revenue loss rarely happens in one clean step."
+- Subtitle: "A payment degrades, a customer abandons checkout, a mandate fails, or an invoice goes overdue. By the time a generic alert fires, the recovery window may already be closing."
+- Across the lower two-thirds, three equal evidence cards (about 520 × 310), with small numbered chips and simple editable line icons:
+  Card 01 title "Payment degradation" body "A healthy route becomes unreliable for one issuer × method cohort." Metric row: "97.3% → 80.0%" with danger delta "−17.3 pts".
+  Card 02 title "Checkout abandonment" body "A payment intent is created but recovery depends on a timely, consented follow-up." Metric row: "Recovery window" value "15 min".
+  Card 03 title "Mandate failure" body "A subscription debit fails; the right retry timing matters more than retrying every customer." Metric row: "Customer friction" value "bounded".
+- At bottom left, a small gray mono note: "Signals are cohort-scoped; no portfolio-wide action is inferred from one symptom."
+
+FRAME 03 — "03 — AI judgement / deterministic control"
+Purpose: Make the AI decision boundary unmistakable.
+Layout:
+- Masthead and status pill.
+- Blue eyebrow: "AI JUDGEMENT WITH DETERMINISTIC CONTROL".
+- Headline: "AI ranks and explains. Policy authorizes. Code executes."
+- Subtitle: "PayTwin uses an evidence-grounded agent for diagnosis and action ranking. A deterministic policy engine evaluates constraints; the executor can only run an approved, idempotent workflow."
+- Below, create a 3-column sequential flow with connectors:
+  A. "AI Commander" badge "READ ONLY". Title "Rank the right intervention". Body "Uses incident evidence, cohort health, expected lift, and confidence. Abstains below the evidence threshold." Footer chips: "confidence 0.78", "INC-2481", "evidence cited".
+  B. "Policy Engine" badge "AUTHORITATIVE". Title "Allow only a bounded action". Body "Checks consent, quiet hours, retry and value caps, provider health, merchant scope, approvals, and idempotency." Footer chips: "RP-014", "all checks pass".
+  C. "Recovery Executor" badge "IDEMPOTENT". Title "Issue, observe, and recover". Body "Creates one treatment action for an assigned customer; handles failure states, stopping rules, cancellation, and rollback." Footer chips: "ACT-5001", "audit recorded".
+- Add a strong narrow warning band at the bottom: red soft background, red left border, title "Autonomy stops when evidence or policy is missing." Subtext: "The system fails closed — it does not create or retry a recovery action."
+
+FRAME 04 — "04 — Recovery lifecycle"
+Purpose: Prove an end-to-end provider-shaped recovery path without overstating live integration.
+Layout:
+- Masthead and status pill.
+- Blue eyebrow: "CANONICAL RECOVERY BATCH".
+- Headline: "One recovery action. One customer. One attributable outcome."
+- A horizontal lifecycle across the center with four StepCards (active teal/blue borders, thin connectors):
+  01 "Assign" — "Treatment assignment is locked before an action is created."
+  02 "Issue" — "Payment Link issued with idempotency key and bounded expiry."
+  03 "Verify" — "Signed webhook outcome is verified, deduplicated, and reconciled."
+  04 "Measure" — "Treatment is compared only with its control group."
+- Under the steps, place a full-width panel split 60/40:
+  Left: "Payment Link" and a mono trace block:
+    link_id: plink_RB01_058
+    assignment: treatment
+    amount: ₹1,250
+    idempotency: rb01-058-v1
+    state: paid
+  Right: "Webhook outcome" with a green verification status, then "payment_link.paid", "signature verified", "delivered once", "audit event EVT-88412".
+- Bottom right provenance chip: "Local Test Mode · Razorpay-shaped lifecycle".
+
+FRAME 05 — "05 — Safety controls"
+Purpose: Make risk management visually persuasive; show an intervention blocked before impact.
+Layout:
+- Masthead and status pill.
+- Blue eyebrow: "GOVERNED RECOVERY".
+- Headline: "Recovery must be helpful to the customer and safe for the merchant."
+- Subtitle: "Every action is constrained by explicit stopping rules. PayTwin protects revenue without creating retry storms, unwanted contact, or uncontrolled routing changes."
+- Show a 2 × 2 grid of four compact control cards:
+  "Consent & quiet hours" — "Do not contact unless consent and permitted windows are present."
+  "Retry & value caps" — "Limit attempts and total customer exposure before action starts."
+  "Provider health" — "Stop immediately when connector health is outside the safe band."
+  "Cancellation & rollback" — "Cancel open work and roll back a runtime action when a guard trips."
+- Large policy comparison panel below: three 1/3 width PolicyCards.
+  Recommended (green): eyebrow "RECOMMENDED · RP-014" title "Bounded reroute · 18%" body "Move only the affected cohort to an approved alternate path." outcome "+₹29.9K p50 · within policy".
+  Review (neutral): eyebrow "REVIEW" title "Wait and observe" body "Preserves the current route but leaves the affected cohort exposed." outcome "risk rises".
+  Blocked (red): eyebrow "BLOCKED · POLICY" title "Full portfolio reroute · 65%" body "Higher theoretical recovery, but exceeds the merchant blast-radius cap by 3.6×." outcome "Blocked before execution".
+
+FRAME 06 — "06 — Complementary to routing"
+Purpose: Answer the Razorpay judge question “Why not an optimizer alone?” without attacking Razorpay.
+Layout:
+- Masthead and status pill.
+- Blue eyebrow: "COMPLEMENTARY TO PAYMENT ROUTING".
+- Headline: "Routing intelligence chooses a path. PayTwin governs the recovery loop."
+- Subtitle: "PayTwin is designed to complement payment optimization: it adds cohort diagnosis, intervention controls, lifecycle assurance, and causal proof after the initial routing decision."
+- Make a clean comparison table in a white card with these columns: "Payment optimizer", "PayTwin", "Together".
+  Row "Primary question": "Which available route is best now?" / "Should we intervene, how, and within what guardrails?" / "Choose the best safe recovery path."
+  Row "Decision scope": "Payment routing" / "Payment degradation, recovery, and lifecycle" / "End-to-end payment resilience"
+  Row "Controls": "Route constraints" / "Consent, caps, stopping, rollback, audit" / "Safe performance plus safe execution"
+  Row "Proof": "Route performance" / "Net incremental GMV vs control" / "Measured business impact"
+- At bottom, render a four-node thin flow: "Payment signal" → "Optimizer / route" → "PayTwin recovery governance" → "Net GMV proof".
+
+FRAME 07 — "07 — Business proof"
+Purpose: End with the judge-facing monetary result and credibility.
+Layout:
+- Masthead and status pill.
+- Blue eyebrow: "MEASURED RECOVERY OUTCOME".
+- Headline: "Safe recovery, proven in net GMV."
+- Subtitle: "A completed canonical recovery batch provides the business proof: controlled treatment, attributable outcomes, known costs, and a traceable audit record."
+- Use one 4-column metric strip in large white cards:
+  "Net incremental GMV" value "₹16,535.83" helper "after ₹20.30 action cost"
+  "Recovery rate" value "51.7%" helper "vs 17.7% control"
+  "Confidence interval" value "₹8.7K–₹24.4K" helper "95% interval"
+  "Unsafe executions" value "0" helper "policy-fail closed"
+- Below, left 2/3 panel: heading "Causal proof, not a vanity metric." Table with rows:
+  "Treatment / control" = "58 / 62"
+  "Incremental gross recovery" = "₹16,556.13"
+  "Recovery cost" = "₹20.30"
+  "Net incremental GMV" = "₹16,535.83"
+  "Stopping events" = "0 unsafe; rollback path verified"
+- Right 1/3 panel: heading "Audit-ready" with a vertical check list:
+  "Assignment locked before action"
+  "Webhook verified and deduplicated"
+  "Costs included in outcome"
+  "AUD-REC-5001 · ACT-5001"
+- Final centered footer in blue mono: "Detect → Decide → Recover → Prove"
+
+QUALITY BAR
+- All text must have adequate contrast on the light background.
+- Check that no text clips, overlaps, or leaves a card boundary.
+- All seven frames should feel like one product system; use consistent 12 px / 18 px / 24 px / 32 px spacing rhythm.
+- Use good hierarchy and short line lengths; do not place long paragraphs in narrow columns.
+- Each frame should stand on its own in a screen recording, and the 01→07 order should read as one business story.
