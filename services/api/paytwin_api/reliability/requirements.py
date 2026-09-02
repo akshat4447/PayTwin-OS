@@ -14,7 +14,6 @@ _DOCS = {
     "checkout": "https://razorpay.com/docs/developer-tools/integrations/standard-checkout/",
     "refund_webhooks": "https://razorpay.com/docs/webhooks/refunds/",
     "refund_idempotency": "https://razorpay.com/docs/api/refunds/normal-refunds-idempotent/",
-    "downtime": "https://razorpay.com/docs/api/payments/downtime/",
 }
 
 
@@ -36,7 +35,6 @@ REGISTRY: dict[str, dict] = {
     "RZPREQ-PAYMENTS-001": _rz("Checkout signature and captured payment are verified server-side", "checkout"),
     "RZPREQ-REFUNDS-001": _rz("Refund lifecycle is read from the refund entity", "refund_webhooks"),
     "RZPREQ-REFUNDS-003": _rz("Refund requests and events preserve idempotency", "refund_idempotency"),
-    "RZPREQ-DOWNTIME-001": _rz("Provider downtime signals are available for routing decisions", "downtime"),
     "PTWIN-INV-001": _pt("No fulfilment without a captured payment"),
     "PTWIN-INV-002": _pt("One business effect per provider event"),
     "PTWIN-INV-003": _pt("Invalid signatures have zero state or business effect"),

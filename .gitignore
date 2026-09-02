@@ -19,6 +19,7 @@ services/ml/artifacts/*.json
 *.db
 *.sqlite
 /data/
+services/data/reliability/*.lock
 
 # node
 node_modules/

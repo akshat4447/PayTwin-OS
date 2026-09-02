@@ -217,8 +217,8 @@ isotonic calibration → real-time context. Training reproducible: fixed seed �
 metrics; dataset fingerprint stored.
 
 ## 9) Decide → Govern → Act → Measure
-- **EV optimizer:** `EV(a,x) = P(incr_success|a,x)·value·clv·decay − costs − risk_penalty`;
-  argmax subject to policies; explicit NO_ACTION floor when EV ≤ 0.
+- **EV optimizer:** `EV(a,x) = p_succ_delta(a,x)·value_at_stake − execution_cost − risk_cost`
+  (`services/optimizer.py`); argmax subject to policies; explicit NO_ACTION floor when EV ≤ 0.
 - **Policy engine:** typed validated rules (amount_cap, max_attempts, dnd_window_ok,
   consent_on_file, provider_down…), versioned (`RP-###:vN`), draft/live/archived; verdicts
   ALLOW / REQUIRE_APPROVAL / BLOCK with failed_rules; decisions record the exact enforcing
@@ -236,10 +236,13 @@ Path: message → deterministic intent classifier → **read-only tenant-scoped 
 (get_incident, list_incidents, query_metrics, get_twin_run, get_experiment, get_policy,
 explain_decision, get_audit) → evidence pack E1..En → composer → answer + citation chips.
 Write-intents become typed ActionRequests evaluated by the policy engine — chat never
-executes. Providers via `LlmProvider`: `none` (default deterministic grounded composer),
-openai/anthropic opt-in (temp 0, must cite evidence ids; ungrounded sentences dropped).
+executes. `PAYTWIN_LLM_PROVIDER` selects `none` (default; the deterministic evidence-grounded
+composer that ships and runs in this build) or `openai`/`anthropic` (currently changes only
+the reported `mode`/`composed_by` label — hosted-LLM composition, citation-enforcement and
+ungrounded-sentence dropping are a defined `LlmProvider` seam, not yet wired to a live call).
 Safety: tool outputs are data-not-instructions; credentials never enter prompts; every turn
-audited (tools, latency, citations, mode); 6-prompt refusal set + 12-QA golden grounding eval tested.
+audited (tools, latency, citations, mode); 6-prompt refusal set + 12-QA golden grounding eval
+tested against the deterministic composer.
 
 ## 11) Reliability Lab (native module, shipped 2026-08-26)
 Proves a payment integration behaves correctly under lifecycle failures **before production**:
@@ -248,12 +251,14 @@ cross-tenant blindness, mandate-limit bypass.
 Module map: `fixtures.py` (correct + known-broken mutation policies) → `engine.py`
 (deterministic Event→handler→World ledger→invariant evaluation, no I/O) → `packs.py`
 (suites = clean base + mutations that MUST violate exactly their listed invariants —
-"test the tester" by construction) → `invariants.py` PTWIN-INV-001..007 → `router.py`
+"test the tester" by construction) → `invariants.py` PTWIN-INV-001..008 → `router.py`
 (`/api/reliability/*`, bearer auth, tenant-scoped) → `store.py` immutable JSON run artifacts
 (`data/reliability/runs.json`). **Release gate:** any critical finding ⇒ BLOCKED regardless
 of score; else WARNING on high/medium; else READY. Razorpay scenarios trace to requirement
-ids resolving through `project-memory/razorpay-requirements.jsonl` into sha256-hashed
-sources in `docs/razorpay/sources/` (claims require OFFICIAL_DOC level or are labeled
+ids in a curated registry (`reliability/requirements.py`, hand-synced — not scraped live —
+from `project-memory/razorpay-requirements.jsonl` and the sha256-hashed source extracts in
+`docs/razorpay/sources/`, so a demo or release gate stays reproducible offline; claims require
+OFFICIAL_DOC level or are labeled
 PAYTWIN_INVARIANT / INFERRED / UNKNOWN). UI page `#reliability` + Commander answers
 release-gate questions from live state.
 
