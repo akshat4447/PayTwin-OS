@@ -107,11 +107,18 @@ def seed_workspace(database_url: str) -> str:
     os.environ["PAYTWIN_DATABASE_URL"] = database_url
     os.environ["PAYTWIN_ENV"] = "development"
     os.environ["PAYTWIN_LLM_PROVIDER"] = "none"
-    from paytwin_sim.demo import make_db, seed_world
+    from paytwin_sim.demo import make_db, run_flagship, seed_history, seed_world
 
     db = make_db()
     try:
         seeded = seed_world(db)
+        # Exercise the UI against the same coherent money story used in the
+        # local showcase: a detected incident, bounded action, matched-control
+        # batch, one blocked action, and one automatic rollback.  A bare world
+        # hides these pages behind empty-state placeholders and cannot validate
+        # the end-to-end product path.
+        seed_history(db, seeded["org_id"], seed=42, hours=1.5, only=("mgro",))
+        run_flagship(db, seeded["org_id"], seed=42)
         return seeded["keys"]["risk_admin"]
     finally:
         db.close()
@@ -146,8 +153,11 @@ def main() -> int:
     server: subprocess.Popen[str] | None = None
     browser: subprocess.Popen[str] | None = None
     cdp: Cdp | None = None
+    tempdir: tempfile.TemporaryDirectory[str] | None = None
     try:
-        with tempfile.TemporaryDirectory(prefix="paytwin-served-e2e-") as directory:
+        tempdir = tempfile.TemporaryDirectory(prefix="paytwin-served-e2e-")
+        directory = tempdir.name
+        if tempdir is not None:  # keeps the isolated browser/server block scoped
             temp = pathlib.Path(directory)
             database_url = f"sqlite:///{temp / 'workspace.db'}"
             api_key = seed_workspace(database_url)
@@ -174,18 +184,49 @@ def main() -> int:
                 "window.__PTW_LIVE === true && !!document.querySelector('.app')"))
             wait_for("credential scrubbed from browser URL", lambda: cdp.evaluate(
                 "location.search === '' && !/^#key=/.test(location.hash)"))
+            cdp.evaluate("location.reload(); true")
+            wait_for("workspace session survives a browser refresh", lambda: cdp.evaluate(
+                "window.__PTW_LIVE === true && window.__paytwinHasAuth === true && !!document.querySelector('.app')"))
+            if cdp.evaluate("document.cookie.includes('paytwin_workspace')"):
+                raise AssertionError("workspace session cookie must be HttpOnly")
+            print("PASS workspace session is refresh-stable and HttpOnly")
+
+            cdp.evaluate("document.querySelector('[data-p=\"integrations\"]').click(); true")
+            wait_for("local payment lifecycle renders", lambda: cdp.evaluate(
+                "!!document.querySelector('[data-act=\"localOrder\"]')"))
+            cdp.evaluate("document.querySelector('[data-act=\"localOrder\"]').click(); true")
+            wait_for("local order enables payment capture", lambda: cdp.evaluate(
+                "!!S.localRzp.order && !document.querySelector('[data-act=\"localCapture\"]').disabled"))
+            cdp.evaluate("document.querySelector('[data-act=\"localCapture\"]').click(); true")
+            wait_for("local capture enables Checkout verification", lambda: cdp.evaluate(
+                "!!S.localRzp.payment && !document.querySelector('[data-act=\"localVerify\"]').disabled"))
+            cdp.evaluate("document.querySelector('[data-act=\"localVerify\"]').click(); true")
+            wait_for("Checkout verification enables fulfilment", lambda: cdp.evaluate(
+                "S.localRzp.verified === true && !document.querySelector('[data-act=\"localFulfil\"]').disabled"))
+            cdp.evaluate("document.querySelector('[data-act=\"localFulfil\"]').click(); true")
+            wait_for("one fulfilment is recorded", lambda: cdp.evaluate(
+                "S.localRzp.fulfilled === true && document.body.innerText.includes('Fulfilment recorded exactly once')"))
+            if not cdp.evaluate("document.querySelector('[data-act=\"localCapture\"]').disabled && document.querySelector('[data-act=\"localVerify\"]').disabled && document.querySelector('[data-act=\"localFulfil\"]').disabled"):
+                raise AssertionError("local payment lifecycle kept a completed control actionable")
+            if cdp.evaluate("document.querySelector('.toastwrap').innerText.includes('This control needs a connected local workspace API')"):
+                raise AssertionError("local payment lifecycle displayed the stale connection prompt")
+            print("PASS local order → capture → verify → fulfilment flow")
 
             cdp.evaluate("document.querySelector('[data-p=\"reliability\"]').click(); true")
             wait_for("Reliability Lab served", lambda: cdp.evaluate(
                 "!!document.querySelector('.reliability-proof')"))
             cdp.evaluate("document.querySelector('[data-act=\"relproof\"][data-stage=\"detect\"]').click(); true")
             wait_for("known defect blocks release", lambda: cdp.evaluate(
-                "document.body.innerText.includes('Duplicate fulfilment control caught') && document.body.innerText.includes('CRITICAL CONTROL FAILURE')"))
+                "document.body.innerText.includes('Duplicate fulfilment control caught') && document.body.innerText.includes('FIXTURE BLOCKED')"))
             wait_for("corrected handler becomes actionable", lambda: cdp.evaluate(
                 "document.querySelector('[data-act=\"relproof\"][data-stage=\"verify\"]').disabled === false"))
             cdp.evaluate("document.querySelector('[data-act=\"relproof\"][data-stage=\"verify\"]').click(); true")
             wait_for("corrected handler verifies", lambda: cdp.evaluate(
                 "document.body.innerText.includes('Correction verified') && document.body.innerText.includes('ONE FULFILMENT VERIFIED')"))
+            cdp.evaluate("document.querySelector('[data-act=\"relwh\"][data-k=\"bad_signature\"]').click(); true")
+            wait_for("forged signature is rejected in Webhook Lab", lambda: cdp.evaluate(
+                "!!S.rel.lastFault && S.rel.lastFault.fault === 'bad_signature' && document.body.innerText.includes('Forged signature rejected')"))
+            print("PASS Webhook Lab forged-signature control")
 
             initial_scroll = cdp.evaluate(
                 "const page = document.querySelector('article.page'); page.scrollTop = 500; page.scrollTop")
@@ -212,16 +253,78 @@ def main() -> int:
             cdp.evaluate("document.querySelector('[data-p=\"overview\"]').click(); true")
             wait_for("Command Center restored", lambda: cdp.evaluate(
                 "document.querySelector('.page h1').innerText.includes('Organization view')"))
+
+            # A connected workspace must never route an opportunity card to the
+            # old generic "connect the API" placeholder. The checkout-recovery
+            # opportunity now opens its real cohort surface.
+            cdp.evaluate(
+                "Array.from(document.querySelectorAll('.card')).find(x => x.innerText.includes('Links for 2-failure carts')).querySelector('[data-act=\"nav\"]').click(); true")
+            wait_for("checkout recovery opportunity opens its live view", lambda: cdp.evaluate(
+                "document.querySelector('.page h1').innerText.includes('Checkout funnel')"))
+            cdp.evaluate("document.querySelector('[data-p=\"policies\"]').click(); true")
+            wait_for("policy replay control renders", lambda: cdp.evaluate(
+                "!!document.querySelector('[data-act=\"policyReplay\"]')"))
+            cdp.evaluate("document.querySelector('[data-act=\"polview\"]').click(); true")
+            wait_for("policy modal renders the typed API rules", lambda: cdp.evaluate(
+                "document.body.innerText.includes('rules:') && !document.body.innerText.includes('(typed rules from API)')"))
+            cdp.evaluate("document.querySelector('[data-act=\"ovclose\"]').click(); true")
+            cdp.evaluate("document.querySelector('[data-act=\"policyReplay\"]').click(); true")
+            wait_for("connected policy replay responds", lambda: cdp.evaluate(
+                "document.querySelector('.toastwrap').innerText.trim().length > 0"))
+            replay_message = cdp.evaluate("document.querySelector('.toastwrap').innerText")
+            if "Historical replay complete" not in replay_message:
+                raise AssertionError(f"connected policy replay failed: {replay_message}")
+            if "Connect the local workspace API" in replay_message:
+                raise AssertionError("connected policy replay displayed a stale connection prompt")
+            print("PASS connected controls use the workspace API, not the stale connection prompt")
+
+            cdp.evaluate("document.querySelector('[data-p=\"overview\"]').click(); true")
+            wait_for("Command Center restored after control check", lambda: cdp.evaluate(
+                "document.querySelector('.page h1').innerText.includes('Organization view')"))
+            cdp.evaluate("document.querySelector('[data-act=\"verifyAudit\"]').click(); true")
+            wait_for("connected audit verification responds", lambda: cdp.evaluate(
+                "document.querySelector('.toastwrap').innerText.trim().length > 0"))
+            audit_message = cdp.evaluate("document.querySelector('.toastwrap').innerText")
+            if "Audit chain verified" not in audit_message:
+                raise AssertionError(f"connected audit verification failed: {audit_message}")
+            print("PASS audit verification uses the connected workspace API")
             cdp.evaluate("document.querySelector('[data-act=\"launchFlow\"]').click(); true")
             wait_for("operational flow opens Twin Lab", lambda: cdp.evaluate(
                 "document.querySelector('.page h1').innerText.includes('Scenario Lab')"))
             wait_for("served forecast completes", lambda: cdp.evaluate(
                 "document.body.innerText.includes('Pre-incident scenario forecast')"), timeout=20)
+            cdp.evaluate("document.querySelector('[data-act=\"surgeInject\"]').click(); true")
+            wait_for("scenario injection advances the operational flow", lambda: cdp.evaluate(
+                "S.flowStep >= 2"), timeout=25)
+            wait_for("scenario injection reports verified events", lambda: cdp.evaluate(
+                "document.querySelector('.toastwrap').innerText.includes('Scenario events introduced')"), timeout=10)
+            injection_message = cdp.evaluate("document.querySelector('.toastwrap').innerText")
+            if "connected local workspace API" in injection_message:
+                raise AssertionError("scenario injection displayed a stale connection prompt")
+            print("PASS connected scenario injection uses the workspace API")
 
             cdp.evaluate("document.querySelector('[data-p=\"experiments\"]').click(); true")
             wait_for("recovery money-proof screen renders", lambda: cdp.evaluate(
                 "document.body.innerText.includes('Net incremental GMV') && "
                 "document.body.innerText.includes('Why not a payment optimizer alone?')"))
+            cdp.evaluate("document.querySelector('[data-act=\"batchReport\"]').click(); true")
+            wait_for("downloadable recovery report opens with money proof", lambda: cdp.evaluate(
+                "document.body.innerText.includes('Recovery Batch Report') && document.body.innerText.includes('net incremental GMV') && document.body.innerText.includes('stopping events') && document.body.innerText.includes('audit references')"))
+            cdp.evaluate("document.querySelector('[data-recovery-report] [data-act=\"ovclose\"]').click(); true")
+
+            cdp.evaluate("S.inc = 0; document.querySelector('[data-p=\"commander\"]').click(); true")
+            wait_for("Commander renders an empty live evidence context", lambda: cdp.evaluate(
+                "document.body.innerText.includes('Choose a question to retrieve current, cited workspace evidence.')"))
+            cdp.evaluate("document.querySelector('[data-q=\"Why this action?\"]').click(); true")
+            wait_for("Commander receives its live tool trace", lambda: cdp.evaluate(
+                "Array.isArray(S.cmdTrace) && S.cmdTrace.length > 0"))
+            if not cdp.evaluate(
+                    "(() => { const chat = document.querySelector('#chatbox'); const trace = document.querySelector('#trace'); const selected = (INC[S.inc] || INC[0] || {}).id || ''; return !!chat && !!trace && !!selected && chat.innerText.includes(selected) && trace.innerText.includes(selected); })()"):
+                raise AssertionError("Commander response or trace did not retain the selected incident")
+            print("PASS Commander keeps its selected incident in the answer")
+            cdp.evaluate("document.querySelector('[data-q=\"How much was recovered?\"]').click(); true")
+            wait_for("Commander reports recovery money proof instead of a payment count", lambda: cdp.evaluate(
+                "(() => { const chat = document.querySelector('#chatbox'); return !!chat && chat.innerText.includes('net incremental GMV'); })()"))
 
             cdp.evaluate("document.querySelector('[data-act=\"theme\"]').click(); true")
             wait_for("light theme has high-contrast text", lambda: cdp.evaluate(
@@ -235,6 +338,8 @@ def main() -> int:
             cdp.close()
         stop(browser)
         stop(server)
+        if tempdir is not None:
+            tempdir.cleanup()
 
 
 if __name__ == "__main__":

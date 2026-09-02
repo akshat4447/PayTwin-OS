@@ -80,6 +80,8 @@ def classify_intent(text: str) -> dict:
             m = re.search(r"INC-\d+", text.upper())
             return {"kind": "action", "action_kind": kind,
                     "target": m.group(0) if m else None}
+    if re.search(r"\b(how much|money recovered|recovered|recovery value|net incremental)\b", low):
+        return {"kind": "recovery_proof"}
     if re.search(r"\binc-\d+", low):
         return {"kind": "incident_status"}
     if re.search(r"\b(why|explain|rca|root cause|decision)\b", low):
@@ -108,6 +110,9 @@ def tool_get_incident(db: Session, org_id: str, ref: str | None,
                       pack: EvidencePack) -> str:
     q = db.query(Incident).filter(Incident.organization_id == org_id)
     inc = q.filter(Incident.human_id == ref.upper()).one_or_none() if ref else None
+    if ref and inc is None:
+        eid = pack.add("incident", ref.upper(), "incident is not in this organization")
+        return f"No incident {ref.upper()} is available in this organization. [{eid}]"
     if inc is None:
         inc = (db.query(Incident)
                .filter(Incident.organization_id == org_id,
@@ -175,6 +180,54 @@ def tool_get_experiment(db: Session, org_id: str, pack: EvidencePack) -> str:
             f"(95% CI {r.get('ci95', [0, 0])}). [{eid}]")
 
 
+def _rupees(paise: int | float) -> str:
+    return f"₹{int(round(paise)) / 100:,.0f}"
+
+
+def tool_get_recovery_proof(db: Session, org_id: str, pack: EvidencePack,
+                            incident_ref: str | None = None) -> str:
+    """Return the causal money proof, never a payment-count proxy.
+
+    The treatment arm is compared with a counterfactual control expectation
+    scaled to treatment eligibility.  This keeps a Commander answer aligned
+    with the downloadable recovery-batch report.
+    """
+    query = db.query(Experiment).filter(Experiment.organization_id == org_id)
+    if incident_ref:
+        incident = (db.query(Incident)
+                    .filter(Incident.organization_id == org_id,
+                            Incident.human_id == incident_ref.upper()).one_or_none())
+        if incident is not None:
+            query = query.filter(Experiment.incident_id == incident.id)
+    exp = query.order_by(Experiment.started_at.desc()).first()
+    if exp is None:
+        eid = pack.add("experiment", incident_ref or "none", "no measured recovery batch")
+        return ("No measured recovery batch is available for this incident yet; "
+                "PayTwin will not claim recovered money from a forecast. "
+                f"[{eid}]")
+    r = experiment_results(db, exp)
+    n = r["n"]
+    ci = r.get("net_incremental_ci95_paise", [0, 0])
+    audit_refs = ", ".join(r.get("audit_refs") or []) or "none"
+    stops = "; ".join(r.get("stopping_events") or []) or "none recorded"
+    eid = pack.add(
+        "recovery_batch", exp.id,
+        f"{exp.name}: net incremental {_rupees(r['net_incremental_paise'])}; "
+        f"treatment n={n['treatment']}, control n={n['control']}; "
+        f"95% interval {_rupees(ci[0])}–{_rupees(ci[1])}; audit {audit_refs}",
+    )
+    return (
+        f"Measured recovery for '{exp.name}': gross treatment recovery "
+        f"{_rupees(r['gross_recovered_paise'])}, matched-control expectation "
+        f"{_rupees(r['control_expected_paise'])}, intervention cost "
+        f"{_rupees(r['intervention_cost_paise'])}, and net incremental GMV "
+        f"{_rupees(r['net_incremental_paise'])}. The 95% interval is "
+        f"{_rupees(ci[0])}–{_rupees(ci[1])} across treatment n={n['treatment']} "
+        f"and control n={n['control']}. Stopping events: {stops}. "
+        f"Audit references: {audit_refs}. [{eid}]"
+    )
+
+
 def tool_explain_decision(db: Session, org_id: str, human_or_id: str | None,
                           pack: EvidencePack) -> str:
     q = db.query(ActionExecution).filter(ActionExecution.organization_id == org_id)
@@ -208,11 +261,13 @@ def tool_get_audit(db: Session, org_id: str, pack: EvidencePack, limit: int = 8)
     return "Recent audit entries: " + "; ".join(parts) + "."
 
 
-def _merchant(db: Session, org_id: str):
+def _merchant(db: Session, org_id: str, merchant_id: str | None = None):
     from paytwin_api.models import Merchant
 
-    return (db.query(Merchant).filter(Merchant.organization_id == org_id)
-            .order_by(Merchant.created_at.asc()).first())
+    query = db.query(Merchant).filter(Merchant.organization_id == org_id)
+    if merchant_id:
+        return query.filter(Merchant.id == merchant_id).one_or_none()
+    return query.order_by(Merchant.created_at.asc()).first()
 
 
 def candidate_amount(cand) -> int:
@@ -246,7 +301,11 @@ def _draft_and_evaluate(db: Session, org_id: str, intent: dict,
         return ("I could not find an incident with a ranked candidate to build a "
                 f"request from. [{eid}]\n"
                 "No customer or payment action was executed.", {"decision": "none"})
-    merchant = _merchant(db, org_id)
+    merchant = _merchant(db, org_id, inc.merchant_id)
+    if merchant is None:
+        eid = pack.add("merchant", inc.merchant_id, "incident merchant is unavailable")
+        return (f"The incident merchant is unavailable; no request was drafted. [{eid}]",
+                {"decision": "none"})
     rules, _policy_label = active_rules(db, org_id, merchant)
     ctx = PolicyContext(
         merchant_id=merchant.id, autonomy_mode=merchant.autonomy_mode,
@@ -279,12 +338,22 @@ def _draft_and_evaluate(db: Session, org_id: str, intent: dict,
                               "failed_rules": failed, "kind": cand.kind}
 
 
-def handle_message(db: Session, principal, text: str) -> dict:
+def _requested_incident(text: str, incident_id: str | None) -> str | None:
+    explicit = re.search(r"\bINC-\d+", text.upper())
+    if explicit:
+        return explicit.group(0)
+    requested = (incident_id or "").strip().upper()
+    return requested if re.fullmatch(r"INC-\d+", requested) else None
+
+
+def handle_message(db: Session, principal, text: str, *,
+                   incident_id: str | None = None, scope: str | None = None) -> dict:
     """Entry point: classify, run read-only tools (or policy evaluation), compose."""
     org_id = principal.organization_id
     pack = EvidencePack()
     trace: list[str] = []
     intent = classify_intent(text)
+    selected_incident = _requested_incident(text, incident_id)
 
     if intent["kind"] == "refuse":
         out = {"intent": "refuse",
@@ -301,13 +370,12 @@ def handle_message(db: Session, principal, text: str) -> dict:
             reply = tool_query_metrics(db, org_id, pack)
         elif kind == "incident_status":
             trace.append("get_incident")
-            m = re.search(r"\bINC-\d+", text.upper())
-            reply = tool_get_incident(db, org_id, m.group(0) if m else None, pack)
+            reply = tool_get_incident(db, org_id, selected_incident, pack)
         elif kind == "explain":
             trace.append("get_incident")
-            reply = tool_get_incident(db, org_id, None, pack)
+            reply = tool_get_incident(db, org_id, selected_incident, pack)
             m = re.search(r"\bACT-\d+", text.upper())
-            if m or re.search(r"\b(decision|why did)", text.lower()):
+            if m or re.search(r"\b(decision|why)\b", text.lower()):
                 trace.append("explain_decision")
                 reply += "\n" + tool_explain_decision(
                     db, org_id, m.group(0) if m else None, pack)
@@ -317,17 +385,23 @@ def handle_message(db: Session, principal, text: str) -> dict:
         elif kind == "experiment":
             trace.append("get_experiment")
             reply = tool_get_experiment(db, org_id, pack)
+        elif kind == "recovery_proof":
+            trace.append("get_recovery_proof")
+            reply = tool_get_recovery_proof(db, org_id, pack, selected_incident)
         elif kind == "audit":
             trace.append("get_audit")
             reply = tool_get_audit(db, org_id, pack)
         else:
             trace += ["get_incident", "evaluate_policy"]
+            if selected_incident:
+                intent["target"] = selected_incident
             reply, _policy_meta = _draft_and_evaluate(db, org_id, intent, pack)
         out = {"intent": ("action_policy" if kind == "action"
                           else {"metrics": "metrics",
                                 "incident_status": "incident_status",
                                 "explain": "explain", "twin": "twin",
                                 "experiment": "experiment",
+                                "recovery_proof": "recovery_proof",
                                 "audit": "audit"}[kind]),
                "reply": reply, "citations": [e["id"] for e in pack.items],
                "evidence": pack.items, "tool_trace": trace,
@@ -338,7 +412,8 @@ def handle_message(db: Session, principal, text: str) -> dict:
         object_id=re.sub(r"\s+", " ", text)[:40],
         summary=f"intent={out['intent']} tools={','.join(out['tool_trace'])}",
         details={"tool_trace": out["tool_trace"], "citations": out["citations"],
-                 "evidence": out["evidence"]})
+                 "evidence": out["evidence"], "selected_incident": selected_incident,
+                 "scope": scope})
     return out
 
 

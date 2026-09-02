@@ -143,7 +143,8 @@ def evaluate(rules: dict, ctx: PolicyContext,
 
     cap = rules.get(PolicyRuleId.AMOUNT_CAP.value, DEFAULT_RULES[PolicyRuleId.AMOUNT_CAP.value])
     hard(PolicyRuleId.AMOUNT_CAP.value, ctx.amount_paise <= cap,
-         f"₹{(ctx.amount_paise - cap) / 100:,.0f} over the ₹{cap / 100:,.0f} cap")
+         f"request ₹{ctx.amount_paise / 100:,.0f}; exceeds the "
+         f"₹{cap / 100:,.0f} cap by ₹{(ctx.amount_paise - cap) / 100:,.0f}")
 
     if rules.get(PolicyRuleId.PROVIDER_HEALTHY.value, True):
         hard(PolicyRuleId.PROVIDER_HEALTHY.value, ctx.provider_healthy,

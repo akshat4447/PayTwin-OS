@@ -66,7 +66,10 @@ class TestPolicyEngine:
         assert r.decision == "block" and any("provider_healthy" in f for f in r.failed_rules)
 
     def test_no_consent_blocks(self):
-        r = evaluate(merge_rules({}), self._ctx(consent_on_file=False))
+        # Consent is a fail-closed predicate for customer outreach.  A retry
+        # does not contact the customer, whereas a Payment Link does.
+        r = evaluate(merge_rules({}), self._ctx(action_kind="payment_link",
+                                                consent_on_file=False))
         assert r.decision == "block" and any("consent_on_file" in f for f in r.failed_rules)
 
     def test_autonomy_ladder(self):

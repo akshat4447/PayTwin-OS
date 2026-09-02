@@ -301,7 +301,9 @@ def run_flagship(db, org_id: str, seed: int = 42) -> dict:
         db, org_id, merchant.id, f"{inc.human_id} recovery batch", incident_id=inc.id,
         config={"recovery_batch_id": batch_ref, "analysis": "treatment_vs_control",
                 "attribution_window_min": 30, "provenance": "LOCAL_RAZORPAY_TEST",
-                "assignment": "deterministic_sha256_50_50"},
+                "assignment": "deterministic_sha256_50_50",
+                "assignment_seed":
+                    f"paytwin-recovery-v1:seed-{seed}:canonical-assignment"},
     )
     assignments = [exp_svc.record_assignment(db, exp, gid, propensity=0.5)
                    for gid in groups]

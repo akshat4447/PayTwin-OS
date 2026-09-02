@@ -191,9 +191,17 @@ def test_demo_reset_recovers_stale_metadata_created_schema(tmp_path, monkeypatch
         db.close()
     check = make_engine(url)
     try:
+        # Reset stamps the database at the installed migration head.  Resolve it
+        # from this checkout instead of pinning the test to a past revision.
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        cfg = Config(str(REPO / "services/api/alembic.ini"))
+        cfg.set_main_option("script_location", str(REPO / "services/api/alembic"))
+        expected_head = ScriptDirectory.from_config(cfg).get_current_head()
         with check.connect() as conn:
             assert conn.exec_driver_sql(
-                "SELECT version_num FROM alembic_version").scalar() == "a2b7c9d3e1f4"
+                "SELECT version_num FROM alembic_version").scalar() == expected_head
     finally:
         check.dispose()
 

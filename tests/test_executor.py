@@ -174,6 +174,27 @@ class TestExperiments:
         assert arms == [exp_svc.assign_arm("exp1", f"grp_{i}") for i in range(200)]
         assert 0.3 < arms.count("treatment") / 200 < 0.7
 
+    def test_explicit_assignment_seed_survives_new_experiment_ids(self, db):
+        _seed(db)
+        config = {"assignment_seed": "canonical-recovery:seed-42"}
+        first = exp_svc.create_experiment(
+            db, "org1", "mer1", "first batch", config=config)
+        second = exp_svc.create_experiment(
+            db, "org1", "mer1", "recreated batch", config=config)
+
+        first_arms = [
+            exp_svc.record_assignment(db, first, f"stable_group_{i}").arm
+            for i in range(120)
+        ]
+        second_arms = [
+            exp_svc.record_assignment(db, second, f"stable_group_{i}").arm
+            for i in range(120)
+        ]
+
+        assert first.id != second.id
+        assert first_arms == second_arms
+        assert {"control", "treatment"} == set(first_arms)
+
     def test_lift_from_stored_events(self, db):
         _seed(db)
         e = exp_svc.create_experiment(db, "org1", "mer1", "INC recovery A/B")

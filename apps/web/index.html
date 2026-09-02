@@ -456,13 +456,13 @@ function lineBand(data,w,h,alertIdx){w=w||600;h=h||180;const exp=bandSeries(data
  const ax=(alertIdx==null?n+1:alertIdx);
  return '<svg width="100%" viewBox="0 0 '+w+' '+h+'">'+grid+'<path d="'+up+dn.trim()+'Z" fill="rgba(91,110,245,.13)"/><path d="'+d+'" fill="none" stroke="var(--acc)" stroke-width="2.2" stroke-linejoin="round"/>'+(ax<n?'<line x1="'+X(ax)+'" y1="10" x2="'+X(ax)+'" y2="'+(h-22)+'" stroke="var(--red)" stroke-dasharray="4 4"/><circle cx="'+X(n-1)+'" cy="'+Y(data[n-1])+'" r="4" fill="var(--red)"/>':'')+'</svg>'}
 function flowRail(){const steps=[['Forecast','Risk range'],['Inject','Scenario events'],['Decide','Policy guard'],['Assure','Proof recorded']];const active=Math.max(0,Math.min(S.flowStep||0,steps.length));return '<div class="flow-rail" aria-label="Operational flow">'+steps.map(function(s,i){var state=i<active?'done':i===active?'active':'';return '<div class="flow-step '+state+'"><span class="n">0'+(i+1)+'</span><b>'+s[0]+'</b><small>'+s[1]+'</small></div>'}).join('')+'</div>'}
-function actionCompare(){return '<div class="action-compare"><div class="action-option recommended"><span class="k">Recommended · RP-014</span><strong>Bounded reroute · 18%</strong><p>Move only the affected UPI cohort to an approved alternate route. A rollback guard is armed before activation.</p><span class="outcome">+₹29.9k p50 · within policy</span></div><div class="action-option"><span class="k">Review</span><strong>Wait and observe</strong><p>Preserves the current route but leaves the failure cohort exposed while the incident remains active.</p><span class="outcome" style="color:var(--amb)">+₹4.1k p50 · risk rises</span></div><div class="action-option blocked"><span class="k">Blocked · policy</span><strong>Full reroute · 65%</strong><p>Higher theoretical recovery, but exceeds the merchant blast-radius cap by 3.6×.</p><span class="outcome">Blocked before execution</span></div></div>'}
+function actionCompare(){var labels={reroute_psp:['Bounded PSP reroute','Move only the affected payment cohort to an approved alternate route. A rollback guard is armed before activation.'],retry_burst:['Bounded issuer retry','Retry only eligible issuer failures inside the merchant attempt and time limits.'],payment_links:['Consent-bound Payment Links','Contact only treatment-assigned, consented recovery candidates.'],calendar_shift:['Mandate calendar shift','Move eligible mandate retries inside the approved notice window.']};var action=labels[(S.simRun||{}).scenario]||labels.reroute_psp;return '<div class="action-compare"><div class="action-option recommended"><span class="k">Recommended · policy-checked</span><strong>'+action[0]+' · '+S.alloc+'%</strong><p>'+action[1]+'</p><span class="outcome">'+inr((S.simRun||{}).p50||0)+' p50 · within policy</span></div><div class="action-option"><span class="k">Review</span><strong>Wait and observe</strong><p>Preserves the current path but leaves the affected cohort exposed while the incident remains active.</p><span class="outcome" style="color:var(--amb)">risk remains · no treatment dispatched</span></div><div class="action-option blocked"><span class="k">Blocked · policy</span><strong>Broad recovery action</strong><p>Higher theoretical recovery, but exceeds the merchant blast-radius or contact cap.</p><span class="outcome">Blocked before execution</span></div></div>'}
 /* ================= PAGES ================= */
 function pgOverview(){const a=agg(),m=scopeM();const risk=totalRisk();
  const data=S.scope==='org'?series.mgro.slice(-44):series[S.scope].slice(-44);
  const alertIdx=data.length>6?data.length-6:null;
  const incs=activeInc();
- const opp=[['route','Reroute unhealthy UPI cohort','Bounded 18% · Razorpay rail',inr(29940),'EV-ranked',"openInc('INC-2481')"],['link','Links for 2-failure carts','WhatsApp · consent checked',inr(12600),'RP-009','toastOp()'],['flame','Shift tonight\u2019s debit cycle','Subscriptions · +3h window',inr(18400),'RP-021',"openInc('INC-2482')"]];
+ const opp=[['route','Reroute unhealthy UPI cohort','Bounded 18% · Razorpay rail',inr(29940),'EV-ranked','warroom'],['link','Links for 2-failure carts','Consent-bound checkout recovery',inr(12600),'RP-009','funnel'],['flame','Shift tonight\u2019s debit cycle','Subscriptions · +3h window',inr(18400),'RP-021','policies']];
  return '<div class="pagegrid">'+
  '<div class="trow"><div><p class="eyebrow"><span class="dot" style="width:7px;height:7px;border-radius:50%;background:var(--grn);display:inline-block"></span> '+workspaceModeLabel()+' · synced <span data-live="sync">0</span>s ago</p>'+
  '<h1>'+(m?'Merchant view — '+esc(m.name):'Organization view — '+esc(ORG.name))+'</h1><p class="sub">'+(m?m.mode+' · baseline learned from this merchant\u2019s own history.':'Portfolio rollup across '+a.n+' merchants · every number below specializes per merchant.')+'</p></div>'+
@@ -483,7 +483,7 @@ function pgOverview(){const a=agg(),m=scopeM();const risk=totalRisk();
  '<div class="card"><div class="hd"><h2>Incident queue</h2><button class="lk" data-act="nav" data-p="warroom">Open war room \u2192</button></div><table class="tbl"><thead><tr><th>ID</th><th>Severity</th><th>Title</th><th>Cohort</th><th>Risk</th><th>State</th></tr></thead><tbody>'+
  INC.filter(i=>S.scope==='org'||i.merch===S.scope).map(i=>'<tr class="rw" data-act="openInc" data-id="'+i.id+'"><td class="mono">'+i.id+'</td><td><span class="pill '+(i.sev==='P1'?'red':i.sev==='P2'?'amb':'mut')+'">'+i.sev+'</span></td><td><b>'+esc(i.title)+'</b></td><td style="color:var(--mut);font-size:12px">'+esc(i.cohort)+'</td><td class="num">'+inr(i.risk)+'</td><td><span class="pill '+(i.state==='MITIGATING'?'amb':i.state==='DETECTED'?'red':'acc')+'">'+i.state+'</span></td></tr>').join('')+
  '</tbody></table></div>'+
- '<div class="grid3">'+opp.map(o=>'<div class="card"><div style="display:flex;gap:10px;align-items:flex-start"><span class="chip" style="padding:8px">'+ic(o[0],15)+'</span><div style="flex:1"><b style="font-size:13.5px">'+o[1]+'</b><p style="color:var(--mut);font-size:12px;margin:3px 0 8px">'+o[2]+'</p><div style="display:flex;align-items:center;gap:8px"><strong style="font-size:16px">'+o[3]+'</strong><span class="pill acc">'+o[4]+'</span></div></div></div><button class="lk" style="margin-top:10px" data-act="'+(o[5].startsWith('toastOp')?'toastOp':'openInc')+'">Review \u2192</button></div>').join('')+'</div></div>'}
+ '<div class="grid3">'+opp.map(o=>'<div class="card"><div style="display:flex;gap:10px;align-items:flex-start"><span class="chip" style="padding:8px">'+ic(o[0],15)+'</span><div style="flex:1"><b style="font-size:13.5px">'+o[1]+'</b><p style="color:var(--mut);font-size:12px;margin:3px 0 8px">'+o[2]+'</p><div style="display:flex;align-items:center;gap:8px"><strong style="font-size:16px">'+o[3]+'</strong><span class="pill acc">'+o[4]+'</span></div></div></div><button class="lk" style="margin-top:10px" data-act="nav" data-p="'+o[5]+'">Review \u2192</button></div>').join('')+'</div></div>'}
 function pgTour(){const stages=[
  ['Observe','Ingest a tenant-scoped stream, establish merchant baselines, and see the payment fabric by cohort.','cohort','Cohort health','pulse'],
  ['Detect','Surface a deviation from the expected band before a generic error-rate alarm tells the whole story.','warroom','Open incident','alert'],
@@ -507,18 +507,18 @@ function pgTwin(){S.alloc=S.alloc||18;S.dur=S.dur||18;S.scen=S.scen||'reroute_ps
  return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('twin',13)+' DIGITAL TWIN \u00b7 OPERATIONAL SCENARIOS</p><h1>Scenario Lab</h1><p class="sub">Rehearse recovery in a reproducible payment twin. Results are distributions, not single numbers.</p></div><div class="toolbar">'+(S.env!=='simulation'?'<button class="btn" data-act="simMode">Enter scenario mode</button>':'')+'</div></div>'+
  (S.flowStep?'<section class="ops-brief"><div><p class="eyebrow">FEATURED FLOW · STEP '+Math.min(S.flowStep+1,4)+' OF 4</p><h2>'+(['Forecast financial impact before traffic changes','Introduce the scoped scenario into the workspace','Compare responses with policy constraints','Verify lifecycle protection in Reliability Lab'][Math.min(S.flowStep,3)])+'</h2><p>Follow the scenario controls below, then carry the decision evidence into the War Room and Reliability Lab.</p><div class="brief-actions">'+(S.flowStep<1?'<button class="btn pr" data-act="surgePreview" data-scope="'+scope+'">Run forecast</button>':S.flowStep<2?'<button class="btn pr" data-act="surgeInject" data-scope="'+scope+'">Introduce scenario events</button>':S.flowStep<3?'<button class="btn pr" data-act="runSim">Compare response options</button>':'<button class="btn pr" data-act="nav" data-p="reliability">Verify reliability controls</button>')+'<button class="btn" data-act="nav" data-p="warroom">Open incident evidence</button></div></div>'+flowRail()+'</section>':'')+
  preflight+
- '<div class="grid21"><div class="card"><div class="hd"><h2>1 · Scenario</h2></div><div style="display:flex;flex-direction:column;gap:8px">'+
+ '<div class="grid21"><div class="card"><div class="hd"><h2>1 · Candidate recovery action</h2></div><div style="display:flex;flex-direction:column;gap:8px">'+
  sc.map(s=>'<button style="display:flex;gap:10px;align-items:center;text-align:left;border:1px solid '+(S.scen===s[0]?'var(--acc)':'var(--line)')+';border-radius:11px;padding:9px 12px" data-act="scen" data-k="'+s[0]+'">'+ic(s[3],15)+'<span style="flex:1"><b style="font-size:13px;color:var(--ink)">'+s[1]+'</b><small style="display:block;color:var(--dim);font-size:11px">'+s[2]+'</small></span>'+(S.scen===s[0]?'<span class="pill acc">selected</span>':'')+'</button>').join('')+'</div>'+
  '<label class="range" style="margin-top:14px"><span class="lb" style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--mut)">Traffic allocation <b class="num" id="allocV">'+S.alloc+'%</b></span><input type="range" min="5" max="40" value="'+S.alloc+'" data-input="alloc"></label>'+
  '<label class="range"><span class="lb" style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--mut)">Max duration <b class="num" id="durV">'+S.dur+' min</b></span><input type="range" min="5" max="45" value="'+S.dur+'" data-input="dur"></label>'+
  '<button class="btn pr" style="width:100%;justify-content:center;margin-top:6px" data-act="runSim">'+ic('play',15)+' Run 400-trial Monte Carlo</button></div>'+
  '<div class="card"><div class="hd"><h2>2 · Counterfactual forecast</h2>'+(S.simRun?'<span class="pill grn">complete</span>':'<span class="pill mut">not run</span>')+'</div>'+
  (S.simRun?'<div class="mono" style="font-size:11px;color:var(--mut);background:var(--bg2);border:1px dashed var(--line2);border-radius:10px;padding:8px 11px;margin-bottom:10px">scenario='+S.simRun.scenario+' \u00b7 seed='+S.simRun.seed+' \u00b7 trials=400 \u00b7 reproducible \u2713</div><div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px"><div><small style="color:var(--mut)">incremental p50</small><br><strong style="font-size:24px" class="num">'+inr(S.simRun.p50)+'</strong></div><div><small style="color:var(--mut)">80% interval</small><br><strong class="num">'+inr(S.simRun.lo)+'\u2013'+inr(S.simRun.hi)+'</strong></div><div><small style="color:var(--mut)">SR lift</small><br><strong class="num" style="color:var(--grn)">+'+S.simRun.lift.toFixed(1)+' pts</strong></div></div>'+lineBand(S.simRun.traj,520,150):'<div class="empty" style="padding:30px 10px">'+illShield()+'<p>Select a scenario and run the twin.<br>Results are reported as a distribution with an explicit interval.</p></div>')+'</div></div>'+
- '<div class="card"><div class="hd"><h2>Decision comparison</h2><span class="pill mut">expected value + hard constraints</span></div>'+actionCompare()+'</div>'+
+ '<div class="card"><div class="hd"><h2>Decision comparison</h2><span class="pill mut">expected value + hard constraints</span></div>'+(S.simRun?actionCompare():'<div class="empty" style="padding:20px 10px"><p>Run the selected counterfactual before comparing recovery actions. No recommendation is shown from a stale or unrelated simulation.</p></div>')+'</div>'+
  '<div class="grid2"><div class="card"><div class="hd"><h2>Specialization check · same scenario, two merchants</h2></div><table class="tbl"><tr><th></th><th>Nova Grocery</th><th>Nova Subscriptions</th></tr><tr><td style="color:var(--mut)">Network prior</td><td class="num">retry rank #1</td><td class="num">retry rank #1</td></tr><tr><td style="color:var(--mut)">Merchant adaptation</td><td>high-frequency, low-AOV</td><td>mandate-bound, LTV-weighted</td></tr><tr><td style="color:var(--mut)"><b>Twin\u2019s choice</b></td><td><span class="pill grn">fast retry</span></td><td><span class="pill acc">calendar shift + link</span></td></tr></table><p style="font-size:11.5px;color:var(--dim);margin-top:8px">Same network intelligence \u00d7 different merchant intelligence \u2192 different payment decision.</p></div>'+
  '<div class="card"><div class="hd"><h2>Assumptions on the record</h2></div><div class="code">recovery_curve: TECHNICAL \u2192 62% @5m decay\nfriction(contact_n): convex, gamma=1.4\ncost_retry: \u20b91.8 \u00b7 cost_msg: \u20b90.35\nclv_mult(subscriptions): 4.2x</div><p style="font-size:11.5px;color:var(--dim);margin-top:8px">Published assumption sheet — challenge anything. That\u2019s the point.</p></div></div></div>'}
 function pgMerchants(){const a=agg();
- return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('users',13)+' ORGANIZATION · '+esc(ORG.name)+'</p><h1>Merchants</h1><p class="sub">One intelligence platform, '+a.n+' specialized brains. Each merchant gets its own baseline, calibration, cost model and policies on top of shared network priors.</p></div><div class="toolbar"><button class="btn" data-act="toastOp">+ Onboard merchant</button></div></div>'+
+ return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('users',13)+' ORGANIZATION · '+esc(ORG.name)+'</p><h1>Merchants</h1><p class="sub">One intelligence platform, '+a.n+' specialized brains. Each merchant gets its own baseline, calibration, cost model and policies on top of shared network priors.</p></div><div class="toolbar"><button class="btn" data-act="nav" data-p="audit">View tenant audit</button></div></div>'+
  '<div class="metrics">'+
  metric('Processed GMV · MTD',inr(a.gmv),'+9.4%','g',[30,38,44,41,52,58,66])+
  metric('Protected GMV',inr(a.prot),'+12.6%','g',[29,41,35,54,46,62,57,74])+
@@ -530,26 +530,26 @@ function pgMerchants(){const a=agg();
  '<div class="stepper" title="onboarding stages">'+[1,2,3,4,5].map(s=>'<i class="'+(s<=m.stage?'on':'')+'"></i>').join('')+'</div>'+
  '<small style="color:var(--dim);font-size:10.5px">connected \u2192 baseline \u2192 calibrated \u2192 recommendations \u2192 autopilot</small></div>'}).join('')+'</div>'+
  '<div class="card"><div class="hd"><h2>Three-level intelligence — how a decision is made</h2><button class="lk" data-act="how">details</button></div>'+lvlStrip()+'</div></div>'}
-function pgPol(){return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('law',13)+' GOVERNED AUTOMATION</p><h1>Recovery policies</h1><p class="sub">Risk appetite as typed, versioned code. The policy engine — not an LLM — has the last word on every money-moving action.</p></div><div class="toolbar"><button class="btn" data-act="toastOp">Activity report</button><button class="btn pr" data-act="toastOp">Create policy +</button></div></div>'+
+function pgPol(){return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('law',13)+' GOVERNED AUTOMATION</p><h1>Recovery policies</h1><p class="sub">Risk appetite as typed, versioned code. The policy engine — not an LLM — has the last word on every money-moving action.</p></div><div class="toolbar"><button class="btn" data-act="nav" data-p="audit">Open policy audit</button></div></div>'+
  '<div class="banner ok"><span class="ic">'+ic('shield',18)+'</span><div><b>Autopilot operating inside '+POLICIES.length+' active policies.</b><p>'+BLOCKED.length+' request'+(BLOCKED.length===1?'':'s')+' blocked by the active workspace controls \u00b7 violations = 0</p></div></div>'+
  '<div class="grid21"><div style="display:flex;flex-direction:column;gap:14px">'+
  POLICIES.map(p=>'<div class="card"><div class="hd"><h3 style="font-size:14px">'+esc(p.name)+' <span class="chip">'+p.id+' \u00b7 '+p.ver+'</span> <span class="pill grn">Live</span></h3><button class="btn sm" data-act="polview" data-id="'+p.id+'">View YAML</button></div><p style="color:var(--mut);font-size:12.5px;margin-bottom:8px">'+p.desc+'</p><div style="display:flex;gap:6px;flex-wrap:wrap">'+p.preds.map(x=>'<span class="chip">'+x+'</span>').join('')+'</div></div>').join('')+'</div>'+
  '<div class="card"><div class="hd"><h2>Blocked by policy — this week</h2><span class="pill red">4 blocks</span></div>'+
  BLOCKED.map(b=>'<div style="border:1px solid rgba(240,78,94,.35);border-radius:11px;padding:10px 12px;margin-bottom:9px;background:rgba(240,78,94,.05)"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:13px">\u26D4 '+b[2]+'</b><span class="mono" style="font-size:10.5px;color:var(--dim)">'+b[1]+'</span></div><small style="color:var(--mut);font-size:11.5px;display:block;margin-top:3px"><span class="chip">'+b[3]+'</span> '+b[4]+'</small></div>').join('')+
  '<p style="font-size:11.5px;color:var(--dim)">Every block is itself audited. A safety system you can\u2019t see is a safety system you can\u2019t trust.</p></div></div>'+
- '<div class="grid2"><div class="card"><div class="hd"><h2>Rehearse before you save</h2><span class="pill acc">\u00a7112 preview</span></div><p style="color:var(--mut);font-size:12.5px;margin-bottom:10px">Draft change: RP-007 max_attempts 2 \u2192 3 on Nova Grocery soft declines.</p><table class="tbl"><tr><td>Expected incremental GMV</td><td class="num" style="text-align:right;color:var(--grn)">+\u20b941,200 /mo</td></tr><tr><td>Extra retries</td><td class="num" style="text-align:right">+1,840</td></tr><tr><td>Customer contacts added</td><td class="num" style="text-align:right;color:var(--amb)">+610 (\u26A0 friction)</td></tr><tr><td>Policy violations in replay</td><td class="num" style="text-align:right;color:var(--grn)">0</td></tr></table><button class="btn pr sm" style="margin-top:10px" data-act="toastOp">Run historical replay</button></div>'+
+ '<div class="grid2"><div class="card"><div class="hd"><h2>Rehearse before you save</h2><span class="pill acc">\u00a7112 preview</span></div><p style="color:var(--mut);font-size:12.5px;margin-bottom:10px">Draft change: RP-007 max_attempts 2 \u2192 3 on Nova Grocery soft declines.</p><table class="tbl"><tr><td>Expected incremental GMV</td><td class="num" style="text-align:right;color:var(--grn)">+\u20b941,200 /mo</td></tr><tr><td>Extra retries</td><td class="num" style="text-align:right">+1,840</td></tr><tr><td>Customer contacts added</td><td class="num" style="text-align:right;color:var(--amb)">+610 (\u26A0 friction)</td></tr><tr><td>Policy violations in replay</td><td class="num" style="text-align:right;color:var(--grn)">0</td></tr></table><button class="btn pr sm" style="margin-top:10px" data-act="policyReplay">Run historical replay</button></div>'+
  '<div class="card"><div class="hd"><h2>Compliance predicate library</h2></div><div style="display:flex;flex-direction:column;gap:7px">'+['dnd_window_ok \u2014 TRAI quiet hours','within_mandate_window \u2014 RBI e-mandate notice','consent_on_file \u2014 DPDP consent ledger','contact_budget_ok \u2014 anti-harassment cap','agent_authority_verified \u2014 AP2/UAP mandates','provider_healthy \u2014 connector circuit breaker'].map(x=>'<span class="chip" style="justify-content:flex-start;padding:6px 9px;font-size:11px">'+ic('check',12)+' '+x+'</span>').join('')+'</div></div></div></div>'}
-function pgCmd(){if(!S.chat.length)S.chat=[{r:'ai',t:'Monitoring INC-2481 for '+MERCH.mgro.name+'. Cashfree UPI collect is the dominant failure path (RCA confidence 0.78). Bounded reroute under RP-014 is live, protecting \u2248\u20b936k of cohort GMV with rollback armed.',c:['INC-2481','evt_88412','metric.hdfc_cashfree_sr']}];
+function pgCmd(){var selected=INC[S.inc]||INC[0],selectedId=selected?selected.id:'selected incident',live=!!window.__PTW_LIVE;if(!S.chat.length&&!live)S.chat=[{r:'ai',t:'Connect the local workspace to query incident evidence. PayTwin does not invent live causes, actions, or recovered money when a workspace is unavailable.',c:[]}];var trace=live?(S.cmdTrace&&S.cmdTrace.length?S.cmdTrace.map(function(t){return '<div class="t-ok">✓ '+esc(t.name||t)+'('+esc((t.args&&t.args.incident)||selectedId)+')</div>'}).join(''):'<div style="color:var(--dim);font-size:12px">Ask a question to inspect live workspace evidence.</div>'):'<div style="color:var(--dim);font-size:12px">Connect a workspace to retrieve a tool trace.</div>';
  return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('bot',13)+' EVIDENCE-GROUNDED AGENT</p><h1>AI Incident Commander</h1><p class="sub">Answers cite evidence ids. Write-intents become approval requests — never direct actions.</p></div><div class="toolbar"><span class="pill '+(S.llmDown?'amb':'grn')+'">'+(S.llmDown?'LOCAL FALLBACK MODEL':'HOSTED MODEL')+'</span><button class="btn sm" data-act="llmDrill">Drill fallback</button></div></div>'+
  '<div class="banner ok" style="margin-bottom:14px"><span class="ic">'+ic('shield',18)+'</span><div><b>AI ranks and explains; deterministic controls decide and execute.</b><p>Ranked actions carry evidence coverage and confidence. Below the evidence threshold, the agent abstains; policy code then enforces consent, caps, approval, idempotency, and stopping rules.</p></div><span class="pill acc">ABSTAIN BELOW 0.75</span></div>'+
  '<div class="grid21"><div class="card"><div class="chatbox" id="chatbox">'+
- S.chat.map(m=>'<div class="msg '+(m.r==='you'?'you':'')+'">'+(m.r==='ai'?'<span class="aiav">'+ic('bot',15)+'</span>':'')+'<div class="bub">'+m.t+(m.c?'<div class="meta">'+m.c.map(c=>'<span class="chip">'+c+'</span>').join('')+'</div>':'')+'</div></div>').join('')+
+ (S.chat.length?S.chat.map(m=>'<div class="msg '+(m.r==='you'?'you':'')+'">'+(m.r==='ai'?'<span class="aiav">'+ic('bot',15)+'</span>':'')+'<div class="bub">'+m.t+(m.c?'<div class="meta">'+m.c.map(c=>'<span class="chip">'+c+'</span>').join('')+'</div>':'')+'</div></div>').join(''):'<div class="empty" style="padding:28px 12px"><p>Selected context: <b>'+esc(selectedId)+'</b>.<br>Choose a question to retrieve current, cited workspace evidence.</p></div>')+
  '</div><div style="display:flex;gap:8px;margin-top:14px"><input id="cmdIn" style="flex:1" placeholder="Ask about incidents, causes, policies\u2026"><button class="btn pr" data-act="send">'+ic('send',15)+'</button></div>'+
  '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px"><button class="btn sm" data-act="quick" data-q="Why this action?">Why this action?</button><button class="btn sm" data-act="quick" data-q="What could go wrong?">What could go wrong?</button><button class="btn sm" data-act="quick" data-q="Retry everything now">Retry everything now</button><button class="btn sm" data-act="quick" data-q="How much was recovered?">How much was recovered?</button></div></div>'+
- '<div><div class="card"><div class="hd"><h2>Tool trace</h2><span class="pill mut">read-only tools</span></div><div class="trace" id="trace"><div class="t-ok">\u2713 get_incident(INC-2481) \u00b7 38ms</div><div class="t-ok">\u2713 query_metrics(cohort=hdfc_upi_cashfree) \u00b7 112ms</div><div class="t-ok">\u2713 explain_decision(DEC-4098) \u00b7 61ms</div></div></div>'+
- '<div class="card" style="margin-top:14px"><div class="hd"><h2>Answer contract</h2></div><div class="code">{intent: EXPLAIN_INCIDENT,\n incident_id: "INC-2481",\n citations_required: true,\n requested_write: false}</div><p style="font-size:11.5px;color:var(--dim);margin-top:8px">Free text never triggers actions. Structured intents pass authorization \u2192 policy \u2192 approval \u2192 idempotency.</p></div>'+
+ '<div><div class="card"><div class="hd"><h2>Tool trace</h2><span class="pill mut">read-only tools</span></div><div class="trace" id="trace">'+trace+'</div></div>'+
+ '<div class="card" style="margin-top:14px"><div class="hd"><h2>Answer contract</h2></div><div class="code">{intent: EVIDENCE_QUERY,\n incident_id: "'+esc(selectedId)+'",\n citations_required: true,\n requested_write: false}</div><p style="font-size:11.5px;color:var(--dim);margin-top:8px">Free text never triggers actions. Structured intents pass authorization \u2192 policy \u2192 approval \u2192 idempotency.</p></div>'+
  '<div class="card" style="margin-top:14px"><div class="hd"><h2>Golden-50 eval</h2><span class="pill grn">passing</span></div><div style="font-size:12.5px;color:var(--mut)">Factuality <b style="color:var(--ink)">.94</b> \u00b7 Citation validity <b style="color:var(--ink)">1.00</b> \u00b7 Refusal correctness <b style="color:var(--ink)">1.00</b> \u00b7 Injection resistance <b style="color:var(--ink)">50/50</b></div></div></div></div>'}
-function cmdAnswer(q){const inc=INC[S.inc]||INC[0];q=q.toLowerCase();
+function cmdAnswer(q){if(!window.__PTW_LIVE)return {t:'The local workspace is not connected, so I cannot claim incident facts or recovery outcomes. Connect the workspace to query cited evidence.',c:[]};const inc=INC[S.inc]||INC[0];q=q.toLowerCase();
  if(q.includes('release')||q.includes('reliab')||q.includes('gate')||(S.rel&&S.rel.findings&&S.rel.findings.length&&q.includes('finding'))){
   const g=S.rel&&S.rel.ov&&S.rel.ov.gate;
   if(!g)return {t:'The Reliability Lab hasn\u2019t run in this session yet. Open <b>Reliability Lab</b> and press \u201cRun verification\u201d \u2014 I\u2019ll read the evidence and tell you whether this release should ship.',c:['RELIABILITY-LAB']};
@@ -572,7 +572,7 @@ function pgReliability(){
  const ov=R.ov||{},g=ov.gate||{verdict:'—',score:0,critical:0,high:0,medium:0};
  const gcls=g.verdict==='READY'?'ok':g.verdict==='BLOCKED'?'':'';
  const gicon=g.verdict==='READY'?'check':g.verdict==='BLOCKED'?'flame':'alert';
- const gate='<div class="banner '+gcls+'"><span class="ic">'+ic(gicon,18)+'</span><div><b>Release Gate · '+g.verdict+'</b><p>'+(g.critical+' critical · '+g.high+' high · '+g.medium+' medium open findings — critical invariants always override the score.')+'</p></div><div class="amt"><small style="color:var(--dim)">confidence</small><br><b class="num" style="font-size:24px">'+(g.score??0)+'/100</b></div></div>';
+ const gate='<div class="banner '+gcls+'"><span class="ic">'+ic(gicon,18)+'</span><div><b>Workspace release gate · '+g.verdict+'</b><p>'+(g.critical+' critical · '+g.high+' high · '+g.medium+' medium open findings — critical invariants always override the score. Isolated proof fixtures never alter this workspace gate.')+'</p></div><div class="amt"><small style="color:var(--dim)">confidence</small><br><b class="num" style="font-size:24px">'+(g.score??0)+'/100</b></div></div>';
  const specs='<div class="card"><div class="hd"><h2>Razorpay specification registry</h2><span class="pill grn">verified '+((ov.spec_registry||{}).last_refresh||'—')+'</span></div><div style="display:flex;gap:22px;font-size:12.5px;color:var(--mut)"><span><b style="color:var(--ink)" class="num">'+((ov.spec_registry||{}).docs_verified??'—')+'</b> pages verified</span><span><b style="color:var(--ink)" class="num">'+((ov.spec_registry||{}).requirements??'—')+'</b> requirements traced</span><span><b style="color:var(--ink)">8</b> safety invariants</span></div></div>';
  const trace=(R.requirements||[]).filter(function(item){return item.source_url}).slice(0,4).map(function(item){return '<a class="chip" style="text-decoration:none" target="_blank" rel="noreferrer" href="'+esc(item.source_url)+'">'+esc(item.id)+' ↗</a>'}).join('');
  const traceCard='<div class="card"><div class="hd"><h2>Source-linked controls</h2><span class="pill acc">traceable</span></div><p style="font-size:12px;color:var(--mut);margin-bottom:9px">Requirement IDs shown in each check link back to the Razorpay source used for this sandbox assurance pack.</p><div style="display:flex;gap:6px;flex-wrap:wrap">'+(trace||'<span class="chip">loading sources…</span>')+'</div></div>';
@@ -583,10 +583,10 @@ function pgReliability(){
   metric('Requirements traced',''+(ov.requirements_traced??'—'),'official docs','',[])+'</div>';
  const proof=R.proof||null,proofStage=proof&&proof.stage||'READY_TO_RUN';
  const proofResult=proof?'<div class="proof-result '+(proofStage==='DEFECT_DETECTED'?'blocked':'verified')+'"><b>'+esc(proof.title)+'</b><span class="pill '+(proofStage==='DEFECT_DETECTED'?'red':'grn')+'" style="margin-left:8px">'+esc(proof.gate.verdict)+'</span><p style="color:var(--mut);margin-top:4px">'+esc(proof.summary)+' <span class="mono">'+esc(proof.evidence_label)+' · '+esc(proof.scenario)+'</span></p></div>':'';
- const proofFlow='<section class="reliability-proof"><div class="hd"><div><p class="eyebrow" style="margin-bottom:3px">GUIDED CONTROL PROOF</p><h2 style="font-size:15px">Show that a duplicate fulfilment defect is blocked before release.</h2><p style="color:var(--mut);font-size:12.5px;margin-top:3px">A deterministic known-broken fixture is isolated from merchant evidence. The sequence proves the control catches the fault, then verifies the corrected behavior.</p></div><div class="toolbar"><span class="pill amb">SIMULATED FIXTURE</span><span class="pill acc">PTWIN-INV-008</span></div></div><div class="proof-grid"><div class="proof-step '+(proofStage==='DEFECT_DETECTED'?'blocked':proofStage==='CORRECTION_VERIFIED'?'verified':'active')+'"><span class="proof-n">01 · DETECT</span><b>Run the known fault</b><p>Two captured attempts are allowed to create duplicate fulfilments for one order.</p><button class="btn sm '+(proofStage==='READY_TO_RUN'?'pr':'')+'" data-act="relproof" data-stage="detect">Run control check</button></div><div class="proof-step '+(proofStage==='DEFECT_DETECTED'?'active':proofStage==='CORRECTION_VERIFIED'?'verified':'')+'"><span class="proof-n">02 · CORRECT</span><b>Verify the safeguard</b><p>Rerun the same order with the one-fulfilment control enforced.</p><button class="btn sm '+(proofStage==='DEFECT_DETECTED'?'pr':'')+'" data-act="relproof" data-stage="verify" '+(proofStage==='DEFECT_DETECTED'?'':'disabled')+'>Verify corrected handler</button></div><div class="proof-step '+(proofStage==='CORRECTION_VERIFIED'?'verified':'')+'"><span class="proof-n">03 · DECIDE</span><b>'+((proof&&proof.gate.verdict)||'Awaiting evidence')+'</b><p>'+((proof&&proof.next_action)||'A release decision follows only after the correction is verified.')+'</p><span class="pill '+(proofStage==='DEFECT_DETECTED'?'red':proofStage==='CORRECTION_VERIFIED'?'grn':'mut')+'">'+(proofStage==='DEFECT_DETECTED'?'CRITICAL CONTROL FAILURE':proofStage==='CORRECTION_VERIFIED'?'ONE FULFILMENT VERIFIED':'NO RESULT')+'</span></div></div>'+proofResult+'</section>';
+ const proofFlow='<section class="reliability-proof"><div class="hd"><div><p class="eyebrow" style="margin-bottom:3px">GUIDED CONTROL PROOF</p><h2 style="font-size:15px">Show that a duplicate fulfilment defect is blocked before release.</h2><p style="color:var(--mut);font-size:12.5px;margin-top:3px">A deterministic known-broken fixture is isolated from merchant evidence and from the workspace gate. The sequence proves the control catches the fault, then verifies the corrected behavior.</p></div><div class="toolbar"><span class="pill amb">ISOLATED FIXTURE</span><span class="pill acc">PTWIN-INV-008</span></div></div><div class="proof-grid"><div class="proof-step '+(proofStage==='DEFECT_DETECTED'?'blocked':proofStage==='CORRECTION_VERIFIED'?'verified':'active')+'"><span class="proof-n">01 · DETECT</span><b>Run the known fault</b><p>Two captured attempts are allowed to create duplicate fulfilments for one order.</p><button class="btn sm '+(proofStage==='READY_TO_RUN'?'pr':'')+'" data-act="relproof" data-stage="detect">Run control check</button></div><div class="proof-step '+(proofStage==='DEFECT_DETECTED'?'active':proofStage==='CORRECTION_VERIFIED'?'verified':'')+'"><span class="proof-n">02 · CORRECT</span><b>Verify the safeguard</b><p>Rerun the same order with the one-fulfilment control enforced.</p><button class="btn sm '+(proofStage==='DEFECT_DETECTED'?'pr':'')+'" data-act="relproof" data-stage="verify" '+(proofStage==='DEFECT_DETECTED'?'':'disabled')+'>Verify corrected handler</button></div><div class="proof-step '+(proofStage==='CORRECTION_VERIFIED'?'verified':'')+'"><span class="proof-n">03 · DECIDE</span><b>'+((proof&&proof.gate.verdict)||'Awaiting evidence')+'</b><p>'+((proof&&proof.next_action)||'A release decision follows only after the correction is verified.')+'</p><span class="pill '+(proofStage==='DEFECT_DETECTED'?'red':proofStage==='CORRECTION_VERIFIED'?'grn':'mut')+'">'+(proofStage==='DEFECT_DETECTED'?'FIXTURE BLOCKED':proofStage==='CORRECTION_VERIFIED'?'ONE FULFILMENT VERIFIED':'NO RESULT')+'</span></div></div>'+proofResult+'</section>';
  const suites='<div class="card"><div class="hd"><h2>Test suites</h2><span class="pill mut">'+(R.suites.length||'…')+' packs · mutations prove detection</span></div><table class="tbl"><thead><tr><th>Suite</th><th>Source</th><th>Scenarios</th><th>Mutations</th><th>Traced requirements</th><th></th></tr></thead><tbody>'+
   R.suites.map(s=>'<tr><td><b>'+s.title+'</b><br><span class="mono" style="font-size:10.5px;color:var(--dim)">'+s.suite_id+'</span></td><td><span class="pill '+(s.source==='RAZORPAY_REQUIREMENT'?'acc':'mut')+'">'+s.source.replace('_',' ')+'</span></td><td class="num">'+s.scenarios.length+'</td><td class="num">'+s.mutations+'</td><td style="font-size:11px;color:var(--dim)">'+s.req_ids.join('<br>')+'</td><td><button class="btn sm" data-act="relrun" data-pack="'+s.suite_id+'">Run</button></td></tr>').join('')+'</tbody></table></div>';
- const wh='<div class="card"><div class="hd"><h2>Webhook Lab · fault injection</h2><span class="pill acc">deterministic</span></div><p style="color:var(--mut);font-size:12.5px;margin-bottom:10px">Inject documented Razorpay delivery faults against the modeled integration and watch which business invariants hold.</p><div style="display:flex;gap:8px;flex-wrap:wrap">'+[['duplicate','Duplicate delivery'],['timeout_redelivery','Timeout redelivery'],['out_of_order','Out-of-order'],['bad_signature','Forged signature']].map(f=>'<button class="btn sm" data-act="relwh" data-k="'+f[0]+'">'+f[1]+'</button>').join('')+'</div>'+(R.lastFault?'<div class="code" style="margin-top:12px">'+esc(JSON.stringify(R.lastFault,null,1))+'</div>':'')+'</div>';
+ const wh='<div class="card"><div class="hd"><h2>Webhook Lab · fault injection</h2><span class="pill acc">deterministic</span></div><p style="color:var(--mut);font-size:12.5px;margin-bottom:10px">Inject documented Razorpay delivery faults against the modeled integration and watch which business invariants hold.</p><div style="display:flex;gap:8px;flex-wrap:wrap">'+[['duplicate','Duplicate delivery'],['timeout_redelivery','Timeout redelivery'],['out_of_order','Out-of-order'],['bad_signature','Forged signature']].map(f=>'<button class="btn sm" data-act="relwh" data-k="'+f[0]+'">'+f[1]+'</button>').join('')+'</div>'+(R.lastFault?(R.lastFault.fault==='bad_signature'?'<div class="banner ok" style="margin-top:12px"><span class="ic">'+ic('check',16)+'</span><div><b>Forged signature rejected.</b><p>Zero payment or fulfilment side effects were recorded · invariant passed.</p></div></div>':'<div class="code" style="margin-top:12px">'+esc(JSON.stringify(R.lastFault,null,1))+'</div>'):'')+'</div>';
  const fnds=R.findings.length?'<div class="card"><div class="hd"><h2>Findings</h2><span class="pill '+(R.findings.some(f=>f.severity==='critical')?'red':R.findings.length?'amb':'grn')+'">'+R.findings.length+' open</span></div><table class="tbl"><thead><tr><th>Finding</th><th>Scenario</th><th>Fixture</th><th>Severity</th><th>Invariants</th><th>Requirements</th></tr></thead><tbody>'+
    R.findings.map(f=>'<tr><td><b>'+esc(f.title)+'</b></td><td class="mono" style="font-size:11px">'+f.scenario+'</td><td class="mono" style="font-size:11px">'+f.fixture+'</td><td><span class="pill '+(f.severity==='critical'?'red':f.severity==='high'?'amb':'mut')+'">'+f.severity+'</span></td><td class="mono" style="font-size:11px">'+Object.keys(f.evidence&&f.evidence.actual||{}).join(', ')||'—'+'</td><td style="font-size:11px;color:var(--dim)">'+(f.requirement_ids||[]).join(', ')+'</td></tr>').join('')+'</tbody></table></div>'
  :'<div class="card"><div class="empty">'+ic('check',22)+'<p><b>No findings.</b> Every scenario passed on the correct integration and every known-broken mutation was detected.</p></div></div>';
@@ -602,7 +602,7 @@ function batchReport(){const L=[];L.push('# PayTwin OS \u2014 Recovery Batch Rep
  L.push('## Batch detail');L.push('| Cohort | n_treat | n_ctrl | Recovery T/C | Incremental |');L.push('|---|---|---|---|---|');L.push('| UPI soft declines (Grocery) | 4,120 | 4,096 | 18.6% / 13.4% | \u20b92.14L |');L.push('| Mandate debits (Subscriptions) | 2,380 | 2,372 | 93.9% / 91.8% | \u20b90.96L |');L.push('| INC-2481 bounded reroute | 812 | 796 | live guardrail | \u20b91.22L |');L.push('');
  L.push('## Compliance');L.push('- Escalations within consent budgets: 100%');L.push('- DND-window contacts blocked: 2 (logged DEC-4096)');L.push('- Stopping rules fired: 3 (all before budget breach)');L.push('');L.push('_Generated by PayTwin OS workspace \u00b7 '+new Date().toISOString()+' \u00b7 reproduce via `make bench`_');
  dl('paytwin-recovery-batch-report.md',L.join('\n'),'text/markdown');toast('Recovery Batch Report downloaded');audit('export.batch_report')}
-function pgModel(){return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('pulse',13)+' MLOPS CONTROL PLANE</p><h1>Model health</h1><p class="sub">Every autonomous decision traces to a versioned model here. Metrics come from PayTwin-Bench runs — nothing decorative.</p></div><div class="toolbar"><button class="btn" data-act="nav" data-p="bench">View benchmark</button><button class="btn pr" data-act="toastOp">Export model cards</button></div></div>'+
+function pgModel(){return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('pulse',13)+' MLOPS CONTROL PLANE</p><h1>Model health</h1><p class="sub">Every autonomous decision traces to a versioned model here. Metrics come from PayTwin-Bench runs — nothing decorative.</p></div><div class="toolbar"><button class="btn" data-act="nav" data-p="bench">View benchmark</button><button class="btn pr" data-act="exportModels">Export model cards</button></div></div>'+
  '<div class="grid21"><div class="card"><div class="hd"><h2>Registry</h2><span class="pill grn">\u2713 bench-linked</span></div>'+
  MODELS.map(m=>'<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)"><span class="pill '+m.tone+'" style="min-width:78px;justify-content:center">'+m.st+'</span><div style="flex:1"><b style="font-size:13.5px">'+m.name+'</b><small style="display:block;color:var(--dim);font-size:11px">'+m.type+'</small></div><span class="chip">'+m.m+'</span><span class="chip">'+m.c+'</span></div>').join('')+'</div>'+
  '<div><div class="card"><div class="hd"><h2>Calibration \u00b7 success predictor</h2><span class="pill grn">within bounds</span></div>'+calibCurve()+'</div>'+
@@ -640,7 +640,7 @@ function pgInt(){return '<div class="pagegrid"><div class="trow"><div><p class="
  '<span class="num" style="font-family:var(--mono);font-size:11px;color:'+(c.hb>60?'var(--amb)':'var(--grn)')+'">hb '+(c.hb>60?Math.floor(c.hb/60)+'m ':'')+c.hb+'s</span>'+
  (c.st==='Available'?'<button class="btn sm pr" data-act="connect" data-n="'+c.n+'">Connect</button>':c.st==='Action needed'?'<button class="btn sm dn" data-act="resolve" data-n="'+c.n+'">Resolve</button>':'<button class="btn sm" data-act="toastOp">Details</button>')+'</div></div>').join('')+
  '<div class="banner ok"><span class="ic">'+ic('bot',18)+'</span><div><b>Agentic rails ready.</b><p>Mandate context (AP2-style verifiable credentials) flows into <span class="chip">agent_authority_verified</span>. Unverified agent payments are held for human review — never auto-retried.</p></div></div></div>'}
-function pgFunnel(){return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('filter',13)+' PRE-PAYMENT INTELLIGENCE</p><h1>Checkout funnel</h1><p class="sub">Revenue leaks before the gateway too. Funnel beacons feed the same detection \u2192 diagnosis \u2192 recovery loop.</p></div><div class="toolbar"><button class="btn" data-act="toastOp">Add beacon SDK</button></div></div>'+
+function pgFunnel(){return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('filter',13)+' PRE-PAYMENT INTELLIGENCE</p><h1>Checkout funnel</h1><p class="sub">Revenue leaks before the gateway too. Funnel beacons feed the same detection \u2192 diagnosis \u2192 recovery loop.</p></div><div class="toolbar"><button class="btn" data-act="nav" data-p="cohort">Inspect payment cohorts</button></div></div>'+
  '<div class="grid21"><div class="card"><div class="hd"><h2>Step conversion · last 24h</h2><span class="pill amb">1 step breaching</span></div>'+funnelSVG()+'</div>'+
  '<div><div class="card"><div class="hd"><h2>Drop-off cohorts</h2></div>'+FUNNEL.drops.map(d=>'<div class="cause '+(d[1].startsWith('\u22126')?'r':d[1].startsWith('\u22122')?'a':'')+'"><b style="flex:1;font-weight:600">'+d[0]+'</b><strong>'+d[1]+'</strong></div>').join('')+'</div>'+
  '<div class="card" style="margin-top:14px"><div class="hd"><h2>Nudge recovery · RP-009</h2></div><div style="display:flex;gap:16px;text-align:center"><div style="flex:1"><small style="color:var(--dim)">links sent</small><br><b class="num" style="font-size:19px">'+FUNNEL.nudges.sent.toLocaleString('en-IN')+'</b></div><div style="flex:1"><small style="color:var(--dim)">recovered</small><br><b class="num" style="font-size:19px;color:var(--grn)">'+FUNNEL.nudges.recovered+'</b></div><div style="flex:1"><small style="color:var(--dim)">GMV saved</small><br><b class="num" style="font-size:19px;color:var(--acc2)">'+inr(FUNNEL.nudges.gmv)+'</b></div></div></div></div></div></div>'}
@@ -682,11 +682,28 @@ document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if
  else if(act==='shareBrief'){dl(id+'-brief.md','# Incident brief \u00b7 '+id+'\nState: '+(INC.find(x=>x.id===id)||INC[0]).state+'\n\nGenerated by PayTwin OS v2','text/markdown');toast('Shareable brief downloaded')}
  else if(act==='askCmd'){S.page='commander';render()}
  else if(act==='quick'||act==='send'){const inp=$('#cmdIn');sendChat(q||(inp?inp.value:''))}
- else if(act==='scen'){S.scen=k;render()}
+ else if(act==='scen'){if(S.scen!==k){S.scen=k;S.simRun=null;render()}}
  else if(act==='launchFlow'){if(window.__paytwinStartIncidentFlow){window.__paytwinStartIncidentFlow()}else{S.flowStep=1;S.page='twinlab';render();toast('Operational flow staged · forecast the featured scenario')}}
  else if(act==='runSim'){const r=mulberry(20260825+S.alloc*7+S.dur);let sum=0;for(let t=0;t<400;t++)sum+=r()*S.alloc*38+r()*S.dur*140;const mean=sum/400,traj=[];for(let i2=0;i2<16;i2++)traj.push(mean/1000*(0.5+i2/14)+(r()-.5)*3);
   S.simRun={scenario:S.scen,seed:20260825+S.alloc*7+S.dur,p50:Math.round(mean),lo:Math.round(mean*.78),hi:Math.round(mean*1.24),lift:1.9+S.alloc*.11,traj};S.flowStep=Math.max(S.flowStep||0,3);render();toast('Twin comparison complete · reproducible scenario run')}
  else if(act==='simMode'){S.env='simulation';render();toast('Scenario mode enabled')}
+ else if(act==='policyReplay'){
+ if(!window.__PTW_LIVE){toast('Connect the local workspace API to run the historical replay');return}
+  const scope=S.scope!=='org'?S.scope:(ORG.merchants[0]||'mgro');
+  window.__paytwinApi('/api/policies/preview',{method:'POST',body:{merchant_id:scope,draft_rules:{max_attempts:3}}})
+   .then(r=>toast('Historical replay complete · '+r.replayed+' decisions · '+r.would_block+' blocked by the draft'))
+   .catch(err=>toast('Historical replay unavailable ('+String(err).slice(0,40)+')'));
+ }
+ else if(act==='exportModels'){
+  const cards=MODELS.map(m=>({name:m.name,stage:m.st,metrics:{roc:m.m,ece:m.c}}));
+  dl('paytwin-model-cards.json',JSON.stringify({generated_at:new Date().toISOString(),models:cards},null,2),'application/json');
+  toast('Model cards downloaded');
+ }
+ else if(act==='verifyAudit'){
+ if(!window.__PTW_LIVE){toast('Connect the local workspace API to verify audit integrity');return}
+  window.__paytwinApi('/api/audit/verify').then(r=>toast(r.ok?'Audit chain verified · no integrity breaks':'Audit verification found a break at sequence '+r.first_bad_seq))
+   .catch(err=>toast('Audit verification unavailable ('+String(err).slice(0,40)+')'));
+ }
  else if(act==='batchReport')batchReport();else if(act==='auditJsonl')auditExport('jsonl');else if(act==='auditDossier')auditExport('dossier');
  else if(act==='benchDl'){dl('metrics_card.json',JSON.stringify({bench:'PayTwin-Bench r4',seed:20260825,metrics:Object.fromEntries(BENCH.map(b=>[b[0],b[1]]))},null,2),'application/json');toast('metrics_card.json downloaded')}
  else if(act==='polview'){const p2=POLICIES.find(x=>x.id===id);$('#app').insertAdjacentHTML('beforeend','<div class="overlay" data-act="ovclose"><div class="modal"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3>'+p2.id+' \u00b7 '+esc(p2.name)+'</h3><button class="iconbtn" data-act="ovclose">'+ic('x',14)+'</button></div><div class="code">'+esc(p2.yaml)+'</div></div></div>')}
@@ -695,10 +712,10 @@ document.addEventListener('click',e=>{const el=e.target.closest('[data-act]');if
  else if(act==='heatcell')toast(el.dataset.i+' \u00d7 '+el.dataset.p+' \u2014 drilling into cohort payments\u2026');
  else if(act==='connect')toast(el.dataset.n+' connection flow started');
  else if(act==='resolve')toast('Diagnostics opened for '+el.dataset.n);
- else if(act==='toastOp')toast('Connect the local workspace API to run this control');
+ else if(act==='toastOp')toast(window.__PTW_LIVE?'This control is informational in the current local workspace.':'Connect the local workspace API to run this control');
  else if(act==='replay')toast('DEC-4098 replayed read-only \u2014 identical output \u2713 deterministic');
  else if(act==='llmDrill'){S.llmDown=true;render();toast('LLM offline \u2192 deterministic fallback engaged');setTimeout(()=>{S.llmDown=false;if(S.page==='commander')render()},6000)}
- else toast('This control needs a connected local workspace API.');});
+ else toast(window.__PTW_LIVE?'This control is not available for the current local workspace.':'This control needs a connected local workspace API.');});
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPal()}if(e.key==='Escape'){closePal();$$('.overlay').forEach(x=>x.remove())}});
 const PAGES={tour:['Operations Flow','spark'],overview:['Command Center','pulse'],cohort:['Cohort Matrix','filter'],warroom:['Incident War Room','alert'],twinlab:['Twin Lab','twin'],policies:['Policies','law'],commander:['AI Commander','bot'],experiments:['Experiments & Recovery','chart'],modelhealth:['Model Health','pulse'],audit:['Audit Explorer','audit'],integrations:['Integrations','plug'],merchants:['Merchants','users'],funnel:['Checkout Funnel','route'],bench:['Benchmark','spark'],reliability:['Reliability Lab','shield']};
 const NAV=[['Start here',['tour']],['Command center',['overview','cohort','warroom']],['Intelligence',['twinlab','policies','commander','experiments','modelhealth']],['Platform',['merchants','funnel','integrations','audit','bench']],['Reliability',['reliability']]];
@@ -715,7 +732,7 @@ function render(options){const previousPage=lastRenderedPage;
  mount.innerHTML='<div class="app"><aside class="sidebar"><div class="brand"><span class="mark">'+ic('shield',14)+'</span><span class="wm">paytwin<small>OS</small></span><span class="ver">v2.0</span></div>'+
  '<button class="wsbtn" data-act="orgmenu"><span class="wslogo">N</span><div class="wsmeta"><b>'+esc(S.scope==='org'?ORG.name:MERCH[S.scope].name)+'</b><small>'+(S.scope==='org'?'Organization \u00b7 all merchants':MERCH[S.scope].mode.split(' \u00b7 ')[0])+'</small></div><span class="chev">'+ic('chev',14)+'</span></button>'+
  '<nav class="nav">'+NAV.map(g=>'<p class="grp">'+g[0]+'</p>'+g[1].map(p=>'<button class="item'+(S.page===p?' on':'')+'" data-act="nav" data-p="'+p+'">'+ic(PAGES[p][1],16)+'<span class="lbl">'+PAGES[p][0]+'</span>'+(p==='warroom'&&activeInc().length?'<span class="dot"></span>':'')+'</button>').join('')).join('')+'</nav>'+
- '<div class="sidefoot"><button class="mini" data-act="toastOp">'+ic('check',14)+'<span>All systems monitored</span></button><div class="userchip"><span class="av">AK</span><div class="ucmeta"><b>Akshat Kumar</b><small>Owner</small></div></div></div></aside>'+
+ '<div class="sidefoot"><button class="mini" data-act="verifyAudit">'+ic('check',14)+'<span>Verify audit integrity</span></button><div class="userchip"><span class="av">AK</span><div class="ucmeta"><b>Akshat Kumar</b><small>Owner</small></div></div></div></aside>'+
  '<div class="mainwrap"><header class="topbar"><button class="iconbtn" data-act="theme" aria-label="toggle theme">'+ic(S.theme==='dark'?'sun':'moon',16)+'</button><button class="searchbtn" data-act="palette">'+ic('search',14)+'<span>Search or jump\u2026</span><kbd>\u2318K</kbd></button><div class="right"><button class="iconbtn" data-act="notifs" aria-label="notifications">'+ic('bell',16)+(S.notifs.length?'<span class="ping"></span>':'')+'</button><button class="envpill" data-act="connectApi" aria-label="'+workspaceModeLabel()+'"><span class="dot"></span>'+workspaceModeLabel()+'</button></div></header>'+
  '<div class="statusstrip"><span class="'+(window.__PTW_LIVE?'ok':'amb')+'">'+(window.__PTW_LIVE?'● local workspace connected':'● operational scenario workspace')+'</span><span>\u00b7</span><span>'+(window.__PTW_LIVE?'ingest lag <b class="num" data-live="lag">18ms</b>':'deterministic scenario feed')+'</span><span>\u00b7</span><span>models: 7 benched</span><span>\u00b7</span><span class="'+(activeInc().length?'warn':'ok')+'">'+'\u25CF '+activeInc().length+' active incident(s)</span><span style="margin-left:auto" class="mono" data-live="clock">'+nowT()+' IST</span></div>'+
  '<article class="page">'+pgf()+'</article></div></div>'+
@@ -743,13 +760,13 @@ function ovTick(){const r=$('[data-live=risk]');if(r){const nv=totalRisk();animN
 function pgWar(){const inc=INC[S.inc]||INC[0];
  if(!inc)return '<div class="pagegrid"><div class="crumb">Incidents</div><div class="card"><div class="empty">'+ic('check',22)+'<p><b>No incidents.</b> Nothing is degrading right now — the war room fills in the moment detection opens one.</p></div></div></div>';
  if(!MERCH[inc.merch])inc.merch=Object.keys(MERCH)[0]||inc.merch;
- const b=inc.budget||{att:0,max:3,bud:0,bmax:20000,win:0,wmax:18};
+ const b=inc.budget||{att:0,max:3,bud:0,bmax:20000,win:0,wmax:18},displayState=inc.presentationState||inc.state;
  const causes=(inc.causes&&inc.causes.length)?inc.causes:[];
  return '<div class="pagegrid"><div class="crumb">Incidents / '+inc.id+' · '+(S.scope==='org'?MERCH[inc.merch].name:'')+'</div>'+
- '<div class="trow"><div><p class="eyebrow" style="color:var(--'+(inc.sev==='P1'?'red':inc.sev==='P2'?'amb':'acc')+')">'+inc.sev+' · '+inc.state+'</p><h1>'+esc(inc.title)+'</h1><p class="sub">Detected '+inc.det+' IST · '+esc(inc.cohort)+' · merchant: '+esc(MERCH[inc.merch].name)+'</p></div>'+
+ '<div class="trow"><div><p class="eyebrow" style="color:var(--'+(inc.sev==='P1'?'red':inc.sev==='P2'?'amb':'acc')+')">'+inc.sev+' · '+displayState+'</p><h1>'+esc(inc.title)+'</h1><p class="sub">Detected '+inc.det+' IST · '+esc(inc.cohort)+' · merchant: '+esc(MERCH[inc.merch].name)+'</p></div>'+
  '<div class="toolbar"><button class="btn" data-act="shareBrief">'+ic('dl',14)+' Share brief</button><button class="btn pr" data-act="askCmd">'+ic('bot',14)+' Ask Commander</button></div></div>'+
  '<div class="tabs" style="display:flex;gap:6px;flex-wrap:wrap">'+INC.map((x,i)=>'<button class="btn sm'+(i===S.inc?' pr':'')+'" data-act="inctab" data-i="'+i+'">'+x.id+'</button>').join('')+'</div>'+
- (inc.state!=='RESOLVED'?'<div class="banner"><span class="ic">'+ic('alert',18)+'</span><div><b>'+(inc.state==='MITIGATING'?'Revenue is protected while mitigation runs.':'Diagnosis in progress — autopilot holding at safe defaults.')+'</b><p>'+(inc.state==='MITIGATING'?'Bounded action live with rollback guardrail armed.':'No autonomous action until evidence coverage ≥ 0.75.')+'</p></div><div class="amt"><small style="color:var(--mut)">at-risk GMV</small><br><b class="num" data-live="risk-'+inc.id+'">'+inr(inc.risk)+'</b></div></div>':'<div class="banner ok"><span class="ic">'+ic('check',18)+'</span><div><b>Resolved.</b><p>Postmortem drafted by Commander · recovery attributed causally.</p></div></div>')+
+ (displayState!=='RESOLVED'?'<div class="banner"><span class="ic">'+ic('alert',18)+'</span><div><b>'+(displayState==='MITIGATING'?'Bounded recovery is active; rollback guard is armed.':displayState==='ROLLED_BACK'?'Bounded recovery rolled back safely; operator review is required.':'Action proposed; deterministic policy evaluation is complete.')+'</b><p>'+(displayState==='MITIGATING'?'Only the approved cohort is treated; stopping rules can cancel the batch automatically.':displayState==='ROLLED_BACK'?'No further treatment is sent until a new, policy-approved action is reviewed.':'No autonomous action is presented until evidence and policy conditions are satisfied.')+'</p></div><div class="amt"><small style="color:var(--mut)">at-risk GMV</small><br><b class="num" data-live="risk-'+inc.id+'">'+inr(inc.risk)+'</b></div></div>':'<div class="banner ok"><span class="ic">'+ic('check',18)+'</span><div><b>Resolved.</b><p>Postmortem drafted by Commander · recovery attributed causally.</p></div></div>')+
  '<div class="grid3">'+
  '<div class="card"><div class="hd"><h2>Progression</h2></div><ul class="tl">'+inc.ev.map(e=>'<li class="'+(e.st==='act'?'act':'done')+'"><time>'+e.t+'</time><b>'+e.ti+'</b><p>'+e.tx+'</p></li>').join('')+'</ul></div>'+
  '<div class="card"><div class="hd"><h2>Causal evidence</h2><span class="chip">coverage '+(0.6+causes.length*.12).toFixed(2)+'</span></div>'+
@@ -786,11 +803,12 @@ render();
 'use strict';
 var qs=new URLSearchParams(location.search);
 var hashKey=(location.hash.match(/^#key=([^&]+)/)||[])[1]||'';
-/* Key handling: read once into memory, then scrub surfaces.
+/* Key handling: read once, exchange it for a signed HttpOnly same-origin
+   workspace session, then scrub every raw-key surface.
    - #key= is preferred because URL fragments are not sent to the server
    - legacy ?key= is stripped from browser history immediately
    - localStorage is cleared (legacy migration) and never re-written
-   - the key lives only in this closure for the page's lifetime */
+   - the raw key never survives in URL, local/session storage, or cookies */
 var KEY=hashKey?decodeURIComponent(hashKey):qs.get('key')||'';
 try{localStorage.removeItem('paytwin_api_key')}catch(e){}
 if(qs.get('key')||hashKey){try{history.replaceState(null,'',location.pathname)}catch(e){}}
@@ -799,19 +817,20 @@ var LIVE=false;
 
 function api(path,opt){opt=opt||{};var ctl=new AbortController();
   var t=setTimeout(function(){ctl.abort()},opt.timeout||4000);
-  return fetch(path,{method:opt.method||'GET',headers:Object.assign({},H,
+  return fetch(path,{method:opt.method||'GET',credentials:'same-origin',headers:Object.assign({},H,
     opt.body?{'Content-Type':'application/json'}:{}),
     body:opt.body?JSON.stringify(opt.body):undefined,signal:ctl.signal})
     .then(function(r){clearTimeout(t);if(!r.ok)throw new Error('http '+r.status);
       return r.json()}).catch(function(e){clearTimeout(t);throw e});}
-/* Other UI modules reuse this closure-backed request function.  The raw key is
-   never copied back into the URL, localStorage, or a globally readable field. */
+/* Other UI modules reuse this closure-backed request function.  Once exchanged,
+   the browser sends only the HttpOnly workspace session — never the raw key. */
 window.__paytwinApi=api;
 window.__paytwinHasAuth=!!KEY;
 
 function hhmm(iso){try{return iso.slice(11,16)}catch(e){return nowT()}}
 function modeName(m){return 'Mode '+m+' · '+({1:'Recommend-only',2:'Approve-first',
   3:'Bounded autopilot',4:'Autonomous'}[m]||'')}
+function formatPolicyRules(rules){var keys=Object.keys(rules||{}).sort();if(!keys.length)return '{}';return 'rules:\n'+keys.map(function(key){var value=rules[key];var rendered=value&&typeof value==='object'?JSON.stringify(value):typeof value==='string'?JSON.stringify(value):String(value);return '  '+key+': '+rendered;}).join('\n')}
 
 function hydrate(meta,ov,incs,pols,blocked,models){
   ORG.name=meta.org_name||ORG.name;
@@ -825,7 +844,7 @@ function hydrate(meta,ov,incs,pols,blocked,models){
   mergeIncidentSummaries(incs,ids[0]||'mgro');
   POLICIES.length=0;
   (pols||[]).forEach(function(p){POLICIES.push({id:p.human_id,name:p.name,
-    desc:p.name,ver:'v'+p.version,yaml:'(typed rules from API)',
+    desc:p.name,ver:'v'+p.version,yaml:formatPolicyRules(p.rules||{}),
     preds:Object.keys(p.rules||{})})});
   BLOCKED.length=0;
   (blocked||[]).forEach(function(b,idx){BLOCKED.push([String(idx+1),
@@ -891,7 +910,7 @@ function patchLiveRegions(){
 }
 function refresh(options){
   var scopeQ=(S.scope&&S.scope!=='org')?'?scope='+encodeURIComponent(S.scope):'';
-  Promise.all([api('/api/overview'+scopeQ),api('/api/incidents'+scopeQ)])
+  return Promise.all([api('/api/overview'+scopeQ),api('/api/incidents'+scopeQ)])
    .then(function(rs){
      var ov=rs[0],incs=rs[1];
      mergeIncidentSummaries(incs,Object.keys(MERCH)[0]||'mgro');
@@ -933,6 +952,9 @@ function hydrateIncidentDetail(humanId,detail){
       why:state==='REJECTED_BY_POLICY'?'blocked at execution time':
         (row.policy==='block'?'blocked by the active workspace policy':''),
       executionState:state,detail:row.detail||''};});
+  var states=item.cands.map(function(candidate){return candidate.executionState;});
+  item.presentationState=states.indexOf('ROLLED_BACK')>=0?'ROLLED_BACK':
+    (states.indexOf('SUCCEEDED')>=0?'MITIGATING':item.state);
 }
 function loadIncidentDetail(humanId){
   if(!LIVE||!humanId)return;
@@ -979,12 +1001,18 @@ var _sendChat=sendChat,_inject=inject,_batchReport=batchReport,
 window.sendChat=function(v){v=(v||'').trim();if(!v)return;
   if(!LIVE)return _sendChat(v);
   S.chat.push({r:'you',t:esc(v)});render();
-  api('/api/commander/chat',{method:'POST',body:{message:v}})
+  var selected=INC[S.inc]||INC[0];
+  api('/api/commander/chat',{method:'POST',body:{message:v,
+    incident:selected&&selected.id,scope:S.scope==='org'?null:S.scope}})
    .then(function(r){var t=mdSafe((r.reply_md||'')
      +(r.citations&&r.citations.length?' ['+r.citations.map(esc).join('] [')+']':''));
-     S.chat.push({r:'ai',t:t,c:r.citations||[]});render();})
+     S.cmdTrace=r.tools||[];S.chat.push({r:'ai',t:t,c:r.citations||[]});render();})
    .catch(function(){S.chat.push({r:'ai',
      t:'(API unreachable - deterministic local engine)'});render();});};
+// The generic click dispatcher closes over the original function binding.
+// Rebind that identifier too, so quick-question buttons always use the
+// connected, scoped API path rather than the offline preview responder.
+sendChat=window.sendChat;
 window.inject=function(kind){if(!LIVE)return _inject(kind);
   if(kind==='llm'){ // local resilience drill — NEVER a chaos injection
     return _inject('llm')}
@@ -994,8 +1022,8 @@ window.inject=function(kind){if(!LIVE)return _inject(kind);
   var scope=S.scope!=='org'?S.scope:(ORG.merchants[0]||'mer1');
   api('/api/chaos/'+scenario,{method:'POST',
     body:{scope:scope,duration_min:10}})
-   .then(function(r){toast('Chaos injected · '+r.events_ingested+' events live');
-     refresh({render:true});})
+   .then(function(r){refresh({render:true}).then(function(){
+     toast('Chaos injected · '+r.events_ingested+' events live');});})
    .catch(function(err2){
      if(/http 403/.test(String(err2))){toast('Chaos blocked by the API (admin-only, non-prod)')}
      else{_inject(kind)}});};
@@ -1006,7 +1034,7 @@ window.__paytwinStartIncidentFlow=function(){
   S.flowStep=0;render();
   api('/api/chaos/preview/surge_bank_failure',{method:'POST',
       body:{scope:scope,duration_min:10,seed:20260827}})
-    .then(function(r){S.preflight=r;S.flowStep=1;S.page='twinlab';render();
+    .then(function(r){S.preflight=r;S.scen=((r.recommended_actions||[])[0]||{}).scenario||S.scen||'reroute_psp';S.simRun=null;S.flowStep=1;S.page='twinlab';render();
       toast('Scenario forecast ready · no events introduced')})
     .catch(function(err2){S.flowStep=0;render();
       toast('Scenario forecast unavailable ('+String(err2).slice(0,38)+')')});
@@ -1047,7 +1075,7 @@ document.addEventListener('click',function(e){
     e.stopImmediatePropagation();
     var surgeScope=el.dataset.scope||S.scope!=='org'&&S.scope||(ORG.merchants[0]||'mer1');
     api('/api/chaos/preview/surge_bank_failure',{method:'POST',body:{scope:surgeScope,duration_min:10,seed:20260827}})
-     .then(function(r){S.preflight=r;S.flowStep=Math.max(S.flowStep||0,1);render();toast('Scenario forecast ready · no events introduced');})
+     .then(function(r){S.preflight=r;S.scen=((r.recommended_actions||[])[0]||{}).scenario||S.scen||'reroute_psp';S.simRun=null;S.flowStep=Math.max(S.flowStep||0,1);render();toast('Scenario forecast ready · no events introduced');})
      .catch(function(err2){toast('Preflight unavailable ('+String(err2).slice(0,38)+')');});
     return}
   if(act==='surgeInject'){
@@ -1056,8 +1084,9 @@ document.addEventListener('click',function(e){
     if(!S.preflight){toast('Preview the scenario first — no synthetic traffic injected');return}
     api('/api/chaos/surge_bank_failure',{method:'POST',timeout:15000,
       body:{scope:injectScope,duration_min:5,seed:20260827}})
-     .then(function(r){S.preflight.injected=r.ground_truth;S.flowStep=Math.max(S.flowStep||0,2);render();
-       toast('Scenario events introduced · '+r.events_ingested+' verified events');refresh({render:true});})
+     .then(function(r){S.preflight.injected=r.ground_truth;S.flowStep=Math.max(S.flowStep||0,2);
+       refresh({render:true}).then(function(){
+         toast('Scenario events introduced · '+r.events_ingested+' verified events');});})
      .catch(function(err2){toast('Injection blocked or unavailable ('+String(err2).slice(0,38)+')');});
     return}
   if(act==='runSim'){
@@ -1107,11 +1136,13 @@ function startStream(){
     pump();
   }).catch(function(){/* SSE unavailable: periodic refresh still runs */});
 }
+function showRecoveryBatchReport(text){var existing=document.querySelector('[data-recovery-report]');if(existing)existing.remove();var overlay=document.createElement('div');overlay.className='overlay';overlay.dataset.recoveryReport='1';overlay.innerHTML='<div class="modal" style="max-width:760px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div><h3>Recovery Batch Report</h3><p style="color:var(--dim);font-size:12px;margin-top:3px">Causal money proof, stopping events, and audit references.</p></div><button class="iconbtn" data-act="ovclose">'+ic('x',14)+'</button></div><pre class="code" style="max-height:58vh;overflow:auto;white-space:pre-wrap">'+esc(text)+'</pre></div>';document.querySelector('#app').appendChild(overlay)}
 window.batchReport=function(){if(!LIVE)return _batchReport();
-  fetch('/api/reports/recovery-batch?hours=720',{headers:H})
-   .then(function(r){return r.text()})
-   .then(function(t){dl('paytwin-recovery-batch-report.md',t,'text/markdown');
-     toast('Recovery Batch Report downloaded')})
+  var scopeQ=S.scope&&S.scope!=='org'?'&scope='+encodeURIComponent(S.scope):'';
+  fetch('/api/reports/recovery-batch?hours=720'+scopeQ,{headers:H})
+   .then(function(r){if(!r.ok)throw new Error('report '+r.status);return r.text()})
+   .then(function(t){showRecoveryBatchReport(t);dl('paytwin-recovery-batch-report.md',t,'text/markdown');
+     toast('Recovery Batch Report downloaded and opened')})
    .catch(function(){_batchReport()});};
 window.auditExport=function(fmt){if(!LIVE)return _auditExport(fmt);
   fetch('/api/audit/export?fmt='+fmt,{headers:H})
@@ -1129,20 +1160,23 @@ function badge(){var el=document.querySelector('.envpill');if(!el)return;
   chip.style.color=LIVE?'#3ecf8e':'#f5a524';}
 var _render=render;
 window.render=function(options){_render(options);badge()};
-if(KEY){
-  Promise.all([api('/api/meta',{timeout:2500}),api('/api/overview'),
+function hydrateWorkspace(){
+  return Promise.all([api('/api/meta',{timeout:2500}),api('/api/overview'),
     api('/api/incidents'),api('/api/policies'),api('/api/policies/blocked'),
-    api('/api/models')]).then(function(rs){
+    api('/api/models')]);
+}
+// The first key-bearing load receives a signed HttpOnly cookie. Later reloads
+// use that cookie, which keeps the actual local workspace available without
+// retaining a bearer credential in browser-readable storage.
+(KEY?api('/api/workspace/session',{method:'POST'}):Promise.resolve())
+  .then(hydrateWorkspace).then(function(rs){
     LIVE=true;window.__PTW_LIVE=true;
+    window.__paytwinHasAuth=true;
     hydrate(rs[0],rs[1],rs[2],rs[3],rs[4],rs[5]);
     render();loadConnectedSurfaces();if(INC[0])loadIncidentDetail(INC[0].id);setInterval(refresh,5000);startStream();
-    toast('Local workspace connected to PayTwin OS API');
-  }).catch(function(){LIVE=false;render();
+    toast(KEY?'Local workspace connected to PayTwin OS API':'Local workspace session restored');
+  }).catch(function(){LIVE=false;window.__PTW_LIVE=false;window.__paytwinHasAuth=false;render();
     toast('Connection unavailable — operational scenario workspace remains available');});
-}else{
-  setTimeout(function(){LIVE=false;render();
-    toast('Operational scenario workspace — select the environment chip to connect');},400);
-}
 })();
 </script>
 <script id="local-razorpay-ui">
@@ -1164,8 +1198,8 @@ function providerScreen(){
   return '<div class="pagegrid"><div class="trow"><div><p class="eyebrow">'+ic('plug',13)+' PROVIDER ENVIRONMENT</p><h1>Razorpay local Test Mode</h1><p class="sub">Run a complete Razorpay-shaped payment lifecycle locally: order, signed webhook, server-side Checkout proof, one fulfilment, and refund. No Razorpay account, credentials, public URL, or network call is required.</p></div><div class="toolbar">'+(connected?'<span class="pill grn">Workspace connected</span>':'<button class="btn pr" data-act="connectApi">Connect workspace</button>')+'</div></div>'+
   '<div class="banner ok"><span class="ic">'+ic('shield',18)+'</span><div><b>Local provider boundary · data provenance: LOCAL_RAZORPAY_TEST.</b><p>Every generated callback is HMAC-signed and enters the same inbox, state-machine, audit, Checkout-verification, and refund paths as an integration delivery.</p></div></div>'+
   (connected?'<div class="grid2"><div class="card"><div class="hd"><h2>1 · Create local order</h2><span class="pill acc">INR</span></div><label style="display:block;font-size:12px;color:var(--mut);margin-bottom:6px">Amount (paise)</label><input id="rzpLocalAmount" value="'+(order?order.amount:12500)+'" inputmode="numeric" style="width:100%;margin-bottom:10px"><button class="btn pr" data-act="localOrder">Create order</button>'+(order?'<div class="code" style="margin-top:12px">order_id: '+esc(order.id)+'\nstatus: '+esc(order.status)+'\nreceipt: '+esc(order.receipt||'—')+'</div>':'')+'</div>'+
-  '<div class="card"><div class="hd"><h2>2 · Generate signed payment webhook</h2><span class="pill '+(payment?'grn':'mut')+'">'+(payment?'received':'awaiting order')+'</span></div><p style="font-size:12px;color:var(--mut);margin-bottom:10px">Capture is generated locally and materialized through the verified provider webhook path.</p><button class="btn pr" data-act="localCapture" '+(order?'':'disabled')+'>Capture local payment</button>'+(payment?'<div class="code" style="margin-top:12px">payment_id: '+esc(payment.id)+'\nstatus: '+esc(payment.status)+'\nwebhook: verified + materialized</div>':'')+'</div>'+
-  '<div class="card"><div class="hd"><h2>3 · Verify then fulfil</h2><span class="pill '+(x.verified?'grn':'mut')+'">'+(x.fulfilled?'fulfilled':x.verified?'verified':'awaiting payment')+'</span></div><p style="font-size:12px;color:var(--mut);margin-bottom:10px">The server verifies the Checkout HMAC and captured order before allowing one business effect.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="localVerify" '+(callback?'':'disabled')+'>Verify Checkout</button><button class="btn pr" data-act="localFulfil" '+(x.verified&&!x.fulfilled?'':'disabled')+'>Record fulfilment</button></div></div>'+
+  '<div class="card"><div class="hd"><h2>2 · Generate signed payment webhook</h2><span class="pill '+(payment?'grn':'mut')+'">'+(payment?'received':'awaiting order')+'</span></div><p style="font-size:12px;color:var(--mut);margin-bottom:10px">Capture is generated locally and materialized through the verified provider webhook path.</p><button class="btn pr" data-act="localCapture" '+(order&&!payment?'':'disabled')+'>Capture local payment</button>'+(payment?'<div class="code" style="margin-top:12px">payment_id: '+esc(payment.id)+'\nstatus: '+esc(payment.status)+'\nwebhook: verified + materialized</div>':'')+'</div>'+
+  '<div class="card"><div class="hd"><h2>3 · Verify then fulfil</h2><span class="pill '+(x.verified?'grn':'mut')+'">'+(x.fulfilled?'fulfilled':x.verified?'verified':'awaiting payment')+'</span></div><p style="font-size:12px;color:var(--mut);margin-bottom:10px">The server verifies the Checkout HMAC and captured order before allowing one business effect.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="localVerify" '+(callback&&!x.verified?'':'disabled')+'>Verify Checkout</button><button class="btn pr" data-act="localFulfil" '+(x.verified&&!x.fulfilled?'':'disabled')+'>Record fulfilment</button></div>'+(x.fulfilled?'<div class="banner ok" style="margin-top:12px"><span class="ic">'+ic('check',16)+'</span><div><b>Fulfilment recorded exactly once.</b><p>Checkout proof verified, idempotency key retained, and the merchant effect is in the audit ledger.</p></div></div>':'')+'</div>'+
   '<div class="card"><div class="hd"><h2>4 · Process refund</h2><span class="pill '+(x.refund?'grn':'mut')+'">'+(x.refund?'processed':'optional')+'</span></div><p style="font-size:12px;color:var(--mut);margin-bottom:10px">Runs the same refund accounting guardrails, including partial-refund limits.</p><button class="btn" data-act="localRefund" '+(payment&&!x.refund?'':'disabled')+'>Refund ₹25</button>'+(x.refund?'<div class="code" style="margin-top:12px">refund_id: '+esc(x.refund)+'\nstatus: processed</div>':'')+'</div></div>':'<div class="card"><div class="empty"><p>Connect a workspace key to run the local provider lifecycle. The key remains only in this browser tab and is supplied through a URL fragment, never query parameters or storage.</p></div></div>')+
   '<div class="card"><div class="hd"><h2>What this environment validates</h2></div><div style="display:flex;gap:8px;flex-wrap:wrap"><span class="chip">order identity</span><span class="chip">raw-body HMAC</span><span class="chip">durable inbox</span><span class="chip">event idempotency</span><span class="chip">payment state</span><span class="chip">Checkout HMAC</span><span class="chip">one fulfilment</span><span class="chip">refund limits</span><span class="chip">audit trail</span></div></div></div>';
 }
@@ -1237,7 +1271,9 @@ pgExp=function(){
       '</tbody></table>':'<div class="empty"><p>No experiments recorded for this scope yet.</p></div>')+
     '</div><div class="grid2"><div class="card"><div class="hd"><h2>Latest recovery batch proof</h2><span class="pill '+(net>=0?'grn':'amb')+'">'+(net>=0?'net positive':'review')+'</span></div><table class="tbl"><tr><td>Gross treatment recovery</td><td class="num" style="text-align:right">'+money(summary.gross_recovered_paise)+'</td></tr><tr><td>Matched-control expectation</td><td class="num" style="text-align:right">−'+money(summary.control_expected_paise)+'</td></tr><tr><td>Incremental recovery</td><td class="num" style="text-align:right">'+money(gross)+'</td></tr><tr><td>Intervention cost</td><td class="num" style="text-align:right">−'+money(cost)+'</td></tr><tr><td><b>Net incremental GMV</b></td><td class="num" style="text-align:right;color:'+(net>=0?'var(--grn)':'var(--red)')+'"><b>'+money(net)+'</b></td></tr></table><p style="font-size:11.5px;color:var(--dim);margin-top:9px">95% net interval: '+moneyCI+' · '+(arms.treatment||0)+' treatment / '+(arms.control||0)+' control · '+stops.length+' stopping event'+(stops.length===1?'':'s')+'.</p><p class="mono" style="font-size:10.5px;color:var(--dim);margin-top:7px">audit: '+esc(auditRefs.join(', ')||'pending')+'</p></div><div class="card"><div class="hd"><h2>Why not a payment optimizer alone?</h2></div><p style="color:var(--mut);font-size:12.5px">A payment optimizer selects a route. PayTwin decides whether a customer-recovery intervention is allowed, applies merchant-specific stopping rules, proves the integration behaves safely, and measures net incremental GMV against a control.</p><p style="font-size:11.5px;color:var(--dim);margin-top:9px">Routing intelligence and recovery governance are complementary controls, not substitutes.</p></div></div><div class="card" style="margin-top:14px"><div class="hd"><h2>Decision boundary</h2><span class="pill acc">deterministic execution</span></div><p style="color:var(--mut);font-size:12.5px">AI ranks interventions and explains evidence; it abstains when evidence coverage is insufficient. Typed policy code authorizes the request, and the executor performs the bounded action. Measurement cannot bypass consent, approval, or risk caps.</p></div>');
  };
- window.addEventListener('click',function(e){
+// Register in capture phase so provider controls are handled before the
+// generic page dispatcher can classify them as unavailable placeholders.
+document.addEventListener('click',function(e){
   var el=e.target.closest('[data-act]');
   if(!el)return;
   var act=el.dataset.act;
@@ -1348,7 +1384,7 @@ function run(){
       summary:'two fulfilments',evidence_label:'SIMULATED_FIXTURE',scenario:'RZP-ONE-FULFILMENT',
       gate:{verdict:'BLOCKED'},next_action:'Verify corrected handler'};
     render();verify=document.querySelector('[data-act="relproof"][data-stage="verify"]');
-    if(!verify||verify.disabled||!/CRITICAL CONTROL FAILURE/.test(document.body.textContent||''))throw new Error('blocked proof state did not render');});
+    if(!verify||verify.disabled||!/FIXTURE BLOCKED/.test(document.body.textContent||''))throw new Error('blocked proof state did not render');});
   check('light-theme-contrast-tokens',function(){
     document.documentElement.dataset.theme='light';
     var css=getComputedStyle(document.documentElement);
@@ -1492,8 +1528,9 @@ document.addEventListener('click',function(e){
   }else{
     api('/api/reliability/webhook-lab/'+el.dataset.k,{method:'POST'})
      .then(function(r){S.rel.lastFault=r;render();
-       toast('Injected · '+r.note+(Object.keys(r.invariant_violations).length?
-             ' · INVARIANTS VIOLATED':' · invariants held'))})
+       toast(r.fault==='bad_signature'?'Forged signature rejected · zero side-effects · invariant passed':
+         'Injected · '+r.note+(Object.keys(r.invariant_violations).length?
+           ' · INVARIANTS VIOLATED':' · invariants held'))})
      .catch(function(){toast('Webhook Lab unreachable')});
   }
 },true);

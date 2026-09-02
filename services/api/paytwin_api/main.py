@@ -8,12 +8,13 @@ import uuid
 from collections import OrderedDict, deque
 from pathlib import Path
 
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from paytwin_api import __version__
-from paytwin_api.auth import AuthError, Principal
+from paytwin_api.auth import (AuthError, Principal, WORKSPACE_SESSION_COOKIE,
+                              issue_workspace_session)
 from paytwin_api.config import get_settings
 from paytwin_api.db import make_engine, make_session_factory
 from paytwin_api.deps import current_principal, get_db
@@ -207,6 +208,26 @@ def meta(p: Principal = Depends(current_principal), db: Session = Depends(get_db
         ],
         "feature_flags": {"llm": settings.llm_provider, "env": settings.env},
     }
+
+
+@app.post("/api/workspace/session", tags=["system"])
+def establish_workspace_session(response: Response,
+                                p: Principal = Depends(current_principal)):
+    """Exchange an entered bearer key for a same-origin HttpOnly workspace session.
+
+    The raw key is never stored in browser URL, local/session storage, or the
+    cookie itself.  Browser refreshes retain the signed session until expiry.
+    """
+    response.set_cookie(
+        key=WORKSPACE_SESSION_COOKIE,
+        value=issue_workspace_session(p, settings.secret_key),
+        max_age=settings.workspace_session_ttl_seconds,
+        httponly=True,
+        secure=settings.is_prod,
+        samesite="strict",
+        path="/",
+    )
+    return {"connected": True, "expires_in_seconds": settings.workspace_session_ttl_seconds}
 
 
 # Webhook ingress (HMAC-authenticated, not bearer-authenticated)

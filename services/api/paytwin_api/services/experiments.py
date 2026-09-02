@@ -34,7 +34,15 @@ def create_experiment(db: Session, organization_id: str, merchant_id: str,
 def record_assignment(db: Session, experiment: Experiment, payment_group_id: str,
                       action_execution_id: str | None = None,
                       propensity: float = 0.5) -> ExperimentAssignment:
-    arm = assign_arm(experiment.id, payment_group_id, propensity)
+    # Ordinary experiments are namespaced by their persisted ID.  Reproducible
+    # evaluation/demo batches can provide an explicit assignment seed so a
+    # newly-created experiment produces the same stored split on every run.
+    # Without this namespace the random Experiment UUID made a supposedly
+    # fixed-seed batch drift between treatment/control sizes.
+    assignment_namespace = str(
+        (experiment.config or {}).get("assignment_seed") or experiment.id
+    )
+    arm = assign_arm(assignment_namespace, payment_group_id, propensity)
     # A control group must not carry an action execution reference. Keeping the
     # treatment rail explicit prevents a report from accidentally attributing
     # natural recoveries to PayTwin.

@@ -4,7 +4,9 @@ from __future__ import annotations
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
-from paytwin_api.auth import AuthError, Principal, resolve_principal
+from paytwin_api.auth import (AuthError, Principal, WORKSPACE_SESSION_COOKIE,
+                              resolve_principal, resolve_workspace_session)
+from paytwin_api.config import get_settings
 
 _SessionLocal = None
 
@@ -25,7 +27,16 @@ def get_db():
 
 
 def current_principal(request: Request, db: Session = Depends(get_db)) -> Principal:
-    principal = resolve_principal(db, request.headers.get("authorization"))
+    authorization = request.headers.get("authorization")
+    # An explicit bearer header always takes precedence; a malformed or revoked
+    # header must never silently fall back to an earlier browser session.
+    if authorization:
+        principal = resolve_principal(db, authorization)
+    else:
+        settings = get_settings()
+        principal = resolve_workspace_session(
+            db, request.cookies.get(WORKSPACE_SESSION_COOKIE), settings.secret_key,
+            settings.workspace_session_ttl_seconds)
     # Authentication precedes tenant scoping because the credential lookup is
     # the one bootstrap query. All downstream endpoint queries inherit this
     # transaction-local context on PostgreSQL.

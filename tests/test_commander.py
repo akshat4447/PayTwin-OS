@@ -167,4 +167,12 @@ class TestTrace:
         other = Principal(organization_id="org-other", role="ops_oncall",
                           key_prefix="ptw_other")
         out = commander.handle_message(db, other, "status of INC-2481?")
-        assert "No incidents on record" in out["reply"]
+        assert "No incident INC-2481 is available" in out["reply"]
+
+    def test_selected_incident_is_preserved_for_an_explanation(self, db):
+        _seed(db)
+        out = commander.handle_message(db, P, "Why this action?",
+                                       incident_id="INC-2481", scope="mer1")
+        assert out["intent"] == "explain"
+        assert "INC-2481" in out["reply"]
+        assert out["tool_trace"] == ["get_incident", "explain_decision"]

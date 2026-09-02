@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     rate_limit_per_min: int = 240
     worker_poll_seconds: float = 0.5
     sse_interval_seconds: float = 2.0
+    # Same-origin, HttpOnly workspace session lifetime. The browser exchanges a
+    # raw API key once, then retains only this signed session cookie so a page
+    # refresh cannot silently downgrade an operator to preview mode.
+    workspace_session_ttl_seconds: int = 28_800
 
     # Real-PSP execution is sandbox/demo-only until a provider integration is
     # certified; flip explicitly per-environment (never in production).

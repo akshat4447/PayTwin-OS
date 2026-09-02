@@ -146,6 +146,19 @@ class TestAuth:
         body = r.json()
         assert body["org"] == "org1" and len(body["merchants"]) == 1
 
+    def test_workspace_session_keeps_same_origin_ui_connected_after_reload(self, client, keys, seeded):
+        r = client.post("/api/workspace/session", headers=_h(keys["admin1"]))
+        assert r.status_code == 200 and r.json()["connected"] is True
+        cookie = r.headers["set-cookie"].lower()
+        assert "httponly" in cookie and "samesite=strict" in cookie
+        assert keys["admin1"].lower() not in cookie
+
+        # Simulates a browser reload: no bearer header survives, but the HttpOnly
+        # same-origin session remains and is still subject to RBAC/tenant scope.
+        restored = client.get("/api/meta")
+        assert restored.status_code == 200
+        assert restored.json()["org"] == "org1"
+
 
 class TestTenancy:
     def test_incidents_scoped_to_tenant(self, client, keys, seeded):

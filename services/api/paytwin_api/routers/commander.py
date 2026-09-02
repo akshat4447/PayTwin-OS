@@ -21,13 +21,15 @@ class ChatBody(BaseModel):
 @router.post("/chat")
 def chat(body: ChatBody, p: Principal = Depends(current_principal),
          db: Session = Depends(get_db)):
-    out = commander_svc.handle_message(db, p, body.message)
+    out = commander_svc.handle_message(db, p, body.message,
+                                       incident_id=body.incident, scope=body.scope)
     db.commit()  # the audit entry appended inside handle_message must persist
     return {
         "reply_md": out["reply"],
         "citations": out["citations"],
         "evidence": out["evidence"],
-        "tools": [{"name": t, "latency_ms": 0, "args": {"scope": body.scope}}
+        "tools": [{"name": t, "latency_ms": 0,
+                   "args": {"scope": body.scope, "incident": body.incident}}
                   for t in out["tool_trace"]],
         "mode": ("fallback" if get_settings_mode() == "none" else "hosted"),
         "intent": out["intent"],
