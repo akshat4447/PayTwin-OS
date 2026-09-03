@@ -1390,7 +1390,7 @@ function run(){
       throw new Error('polling still replaces the full workspace');});
   check('recovery-value-is-not-a-payment-count',function(){
     var source=Array.prototype.map.call(document.scripts,function(s){return s.textContent}).join('\n');
-    if(source.indexOf(\"metric('Recovered value'\")<0||source.indexOf('recovered_paise')<0)
+    if(source.indexOf("metric('Recovered value'")<0||source.indexOf('recovered_paise')<0)
       throw new Error('recovery value contract is missing');});
   check('reliability-proof-flow-renders',function(){
     S.rel={loaded:true,live:true,ov:{suites:4,scenarios:9,requirements_traced:18,

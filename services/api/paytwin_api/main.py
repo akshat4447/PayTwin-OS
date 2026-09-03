@@ -80,8 +80,18 @@ class SecurityAndObservabilityMiddleware:
                     (b"referrer-policy", b"no-referrer"),
                     (b"x-frame-options", b"DENY"),
                     (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
-                    (b"content-security-policy", b"default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'self'; frame-ancestors 'none'"),
+                    (b"content-security-policy",
+                     b"default-src 'self'; img-src 'self' data:; "
+                     b"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                     b"font-src 'self' https://fonts.gstatic.com; "
+                     b"script-src 'self' 'unsafe-inline'; connect-src 'self'; "
+                     b"base-uri 'self'; frame-ancestors 'none'"),
                 ])
+                # The SPA is a single, actively-edited index.html with no build
+                # step or cache-busted filename; without an explicit directive
+                # a browser can silently keep serving a stale copy after a fix.
+                if scope.get("path") == "/":
+                    headers.append((b"cache-control", b"no-cache"))
                 status = int(message["status"])
                 metrics.requests += 1
                 if status >= 500:
