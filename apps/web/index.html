@@ -873,6 +873,7 @@ function liveIncident(summary,fallbackMerchant){
   var item=existing||{id:summary.human_id,ev:[],causes:[],cands:[],
     budget:{att:0,max:3,bud:0,bmax:20000,win:0,wmax:18}};
   item.sev=summary.sev;item.title=summary.title;item.merch=merch;
+  item.scenarioRef=summary.scenario_ref||item.scenarioRef||'';
   item.cohort=[summary.cohort&&summary.cohort.issuer,summary.cohort&&summary.cohort.method,
     summary.cohort&&summary.cohort.psp].filter(Boolean).join(' × ')||'—';
   item.state=summary.state;item.det=hhmm(summary.detected_at||item.det||'');
@@ -932,6 +933,7 @@ function hydrateIncidentDetail(humanId,detail){
   if(!item||!detail)return;
   var header=detail.header||{},rar=detail.rar||{};
   item.title=header.title||item.title;item.sev=header.sev||item.sev;
+  item.scenarioRef=header.scenario_ref||item.scenarioRef||'';
   item.state=header.state||item.state;item.det=hhmm(header.detected_at||item.det||'');
   item.cohort=[header.cohort&&header.cohort.issuer,header.cohort&&header.cohort.method,
     header.cohort&&header.cohort.psp].filter(Boolean).join(' × ')||item.cohort;
@@ -970,10 +972,11 @@ function loadConnectedSurfaces(){
   Promise.all([api('/api/funnel'+scopeQ),api('/api/healthmap'+scopeQ),
     api('/api/merchants'),api('/api/audit?limit=30'+(scopeQ?'&scope='+encodeURIComponent(S.scope):'')),
     api('/api/experiments'+scopeQ),api('/api/integrations'),
-    api('/api/operations/status'),api('/api/razorpay/environment')])
+    api('/api/operations/status'),api('/api/razorpay/environment'),
+    api('/api/audit/verify')])
    .then(function(rs){S.apiSurfaces={funnel:rs[0],healthmap:rs[1],merchants:rs[2],
      audit:rs[3],experiments:rs[4],integrations:rs[5],operations:rs[6],
-     providerEnvironment:rs[7]};
+     providerEnvironment:rs[7],auditIntegrity:rs[8]};
      if(['funnel','cohort','merchants','audit','experiments'].indexOf(S.page)>=0)render({preserveScroll:true})})
    .catch(function(){/* core command-center remains usable if an auxiliary view is unavailable */})}
 document.addEventListener('click',function(e){
@@ -1086,6 +1089,7 @@ document.addEventListener('click',function(e){
       body:{scope:injectScope,duration_min:5,seed:20260827}})
      .then(function(r){S.preflight.injected=r.ground_truth;S.flowStep=Math.max(S.flowStep||0,2);
        refresh({render:true}).then(function(){
+         if(r.linked_incident){var linkedIndex=INC.findIndex(function(incident){return incident.id===r.linked_incident});if(linkedIndex>=0)S.inc=linkedIndex;}
          toast('Scenario events introduced · '+r.events_ingested+' verified events');});})
      .catch(function(err2){toast('Injection blocked or unavailable ('+String(err2).slice(0,38)+')');});
     return}
@@ -1213,9 +1217,23 @@ var previewFunnel=pgFunnel,previewCohort=pgCohort,previewMerchants=pgMerchants,
 pgFunnel=function(){
   var d=S.apiSurfaces&&S.apiSurfaces.funnel;
   if(!window.__PTW_LIVE||!d||!d.stages)return previewFunnel();
-  var max=Math.max.apply(null,d.stages.map(function(x){return x.count||0}).concat([1]));
-  return liveOnly('Checkout funnel','Observed local/Test payment outcomes, scoped to the selected workspace.',
-    '<div class="card"><div class="hd"><h2>Outcome stages</h2><span class="pill acc">observed</span></div>'+d.stages.map(function(x){var p=Math.round((x.count||0)*100/max);return '<div style="display:grid;grid-template-columns:150px 1fr 70px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)"><b>'+esc(x.stage)+'</b><div style="height:9px;border-radius:6px;background:var(--panel3);overflow:hidden"><i style="display:block;height:100%;width:'+p+'%;background:var(--acc)"></i></div><span class="num">'+Number(x.count||0).toLocaleString('en-IN')+'</span></div>'}).join('')+'</div>');
+  var max=Math.max.apply(null,d.stages.map(function(x){return x.count||0}).concat([1])),
+      recovery=d.recovery||{},rates=recovery.recovery_rate||{},arms=recovery.n||{},
+      recovered=recovery.recovered||{},net=Number(recovery.net_incremental_paise||0),
+      interval=recovery.net_incremental_ci95_paise||[];
+  var pct=function(value){return (Number(value||0)*100).toFixed(1)+'%';};
+  var money=function(value){return inr(Number(value||0)/100);};
+  var intervalText=interval.length===2?money(interval[0])+' to '+money(interval[1]):'measurement pending';
+  return liveOnly('Checkout funnel','Observed payment outcomes and attributable failed-payment recovery, scoped to the selected workspace.',
+    '<div class="metrics">'+
+      metric('Completion rate',(Number(d.completion_rate_bp||0)/100).toFixed(1)+'%','observed outcomes','g',[32,39,46,54,60,67])+
+      metric('Failed or timed out',Number(d.failed_or_timeout||0).toLocaleString('en-IN'),'eligible groups '+Number(d.eligible_failed_payment_groups||0).toLocaleString('en-IN'),'r',[66,58,52,46,40,34])+
+      metric('Net incremental GMV',money(net),'measured vs control','p',[18,30,39,50,61,70])+
+      metric('Recovered in treatment',String(recovered.treatment||0),(arms.treatment||0)+' assigned','g',[24,34,42,52,61,72])+
+    '</div><div class="grid21"><div class="card"><div class="hd"><h2>Outcome stages</h2><span class="pill acc">observed</span></div>'+d.stages.map(function(x){var p=Math.round((x.count||0)*100/max);return '<div style="display:grid;grid-template-columns:150px 1fr 70px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)"><b>'+esc(x.stage)+'</b><div style="height:9px;border-radius:6px;background:var(--panel3);overflow:hidden"><i style="display:block;height:100%;width:'+p+'%;background:var(--acc)"></i></div><span class="num">'+Number(x.count||0).toLocaleString('en-IN')+'</span></div>'}).join('')+'</div>'+
+    '<div class="card"><div class="hd"><h2>Failed-payment recovery</h2><span class="pill '+(recovery.batch_id?'grn':'mut')+'">'+(recovery.batch_id?'measured':'pending')+'</span></div>'+
+      (recovery.batch_id?'<p class="mono" style="font-size:11px;color:var(--dim)">'+esc(recovery.batch_id)+'</p><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px"><div><small style="color:var(--dim)">treatment recovery</small><br><b class="num" style="font-size:20px;color:var(--grn)">'+pct(rates.treatment)+'</b><br><small>'+String(recovered.treatment||0)+' / '+String(arms.treatment||0)+'</small></div><div><small style="color:var(--dim)">control recovery</small><br><b class="num" style="font-size:20px">'+pct(rates.control)+'</b><br><small>'+String(recovered.control||0)+' / '+String(arms.control||0)+'</small></div></div><p style="font-size:11.5px;color:var(--dim);margin-top:16px">95% net interval '+intervalText+' · audit '+esc((recovery.audit_refs||[]).join(', ')||'pending')+'</p>':'<p style="color:var(--dim);font-size:12px">No measured recovery batch is available for this scope.</p>')+
+    '</div></div>');
 };
 pgCohort=function(){
   var rows=S.apiSurfaces&&S.apiSurfaces.healthmap;
@@ -1232,7 +1250,9 @@ pgMerchants=function(){
 pgAudit=function(){
   var rows=S.apiSurfaces&&S.apiSurfaces.audit;
   if(!window.__PTW_LIVE||!rows)return previewAudit();
+  var integrity=(S.apiSurfaces&&S.apiSurfaces.auditIntegrity)||{};
   return liveOnly('Audit explorer','Hash-chained operator and system decisions returned from the tenant audit ledger.',
+    '<div class="banner '+(integrity.ok?'ok':'bad')+'"><span class="ic">'+ic(integrity.ok?'check':'alert',18)+'</span><div><b>Chain integrity · '+(integrity.ok?'verified':'attention required')+'</b><p>'+(integrity.ok?'Every decision record is SHA-256 linked to its predecessor; no break was found.':'First integrity break: sequence '+esc(integrity.first_bad_seq||'unknown')+'.')+'</p></div><button class="btn sm" data-act="verifyAudit">Verify audit integrity</button></div>'+
     '<div class="card"><div class="hd"><h2>Latest records</h2><button class="btn sm" data-act="auditJsonl">Export JSONL</button></div><table class="tbl"><thead><tr><th>When</th><th>Action</th><th>Summary</th><th>Actor</th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td class="mono" style="font-size:11px">'+esc((r.ts||'').slice(0,19))+'</td><td><b>'+esc(r.action_type)+'</b></td><td>'+esc(r.summary||'')+'</td><td>'+esc(r.actor)+'</td></tr>'}).join('')+'</tbody></table></div>');
 };
 pgExp=function(){

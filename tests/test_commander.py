@@ -45,18 +45,21 @@ def _seed(db):
                    affected_payments=39)
     db.add(inc)
     db.flush()
+    evidence = {"provider_healthy": True, "consent_on_file": True,
+                "within_mandate_window": True, "agent_authority_verified": True,
+                "contacts_24h": 0, "minutes_since_last_action": 60}
     db.add(RootCauseCandidate(incident_id=inc.id, edge_issuer="HDFC",
                               edge_method="upi_intent", score=0.82, rank=0,
                               counterfactual_share=0.91))
     db.add(ActionCandidate(
         incident_id=inc.id, kind="reroute_psp", label="Reroute Psp",
         detail="", params={"count": 2, "p_success": 0.4, "attempts_used": 1,
-                           "slice_value_paise": 100_000},
+                           "slice_value_paise": 100_000, "evidence": evidence},
         value_paise=400_000, ev_paise=89_475, rank=0))
     db.add(ActionCandidate(
         incident_id=inc.id, kind="retry_burst", label="Retry Burst",
         detail="", params={"count": 2, "p_success": 0.4, "attempts_used": 3,
-                           "slice_value_paise": 900_000_00},
+                           "slice_value_paise": 900_000_00, "evidence": evidence},
         value_paise=400_000, ev_paise=-1, rank=1))
     db.add(Simulation(organization_id=ORG, merchant_id="mer1", incident_id=inc.id,
                       scenario="reroute_psp", seed=42, trials=400,
@@ -121,6 +124,20 @@ class TestActionPath:
         out = commander.handle_message(db, P, "reroute traffic away right now")
         assert out["intent"] == "action_policy"
         assert "ALLOWED" in out["reply"]
+        assert db.query(ActionExecution).count() == 0
+
+    def test_mass_retry_evaluates_full_exposure_not_bounded_slice(self, db):
+        _seed(db)
+        cand = db.query(ActionCandidate).filter_by(kind="retry_burst").one()
+        cand.value_paise = 900_000
+        cand.params = {**cand.params, "attempts_used": 1,
+                       "slice_value_paise": 100_000}
+        db.commit()
+        out = commander.handle_message(db, P, "Retry everything now")
+        assert out["intent"] == "action_policy"
+        assert "BLOCKED" in out["reply"]
+        assert "full cohort exposure" in out["reply"]
+        assert "amount_cap" in out["reply"]
         assert db.query(ActionExecution).count() == 0
 
 

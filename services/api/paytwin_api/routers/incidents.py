@@ -47,6 +47,7 @@ def list_incidents(p: Principal = Depends(current_principal),
              "rar_lo_paise": i.rar_lo_paise, "rar_hi_paise": i.rar_hi_paise,
              "affected_payments": i.affected_payments,
              "confidence": i.confidence,
+             "scenario_ref": i.scenario_ref,
              "cohort": {k: v for k, v in i.cohort().items() if v}}
             for i in rows]
 
@@ -247,6 +248,7 @@ def detail(human_id: str, p: Principal = Depends(current_principal),
     return {
         "header": {"human_id": inc.human_id, "title": inc.title, "sev": inc.sev,
                    "state": inc.state, "confidence": inc.confidence,
+                   "scenario_ref": inc.scenario_ref,
                    "cohort": {k: v for k, v in inc.cohort().items() if v},
                    "detected_at": inc.detected_at.isoformat()},
         "timeline": timeline,

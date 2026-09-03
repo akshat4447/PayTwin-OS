@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from paytwin_api.auth import Principal
 from paytwin_api.config import get_settings
 from paytwin_api.deps import current_principal, err, get_db, require_write
-from paytwin_api.models import Merchant, SimScenario
+from paytwin_api.models import Incident, Merchant, SimScenario
 from paytwin_api.services.bus import publish_outbox
 from paytwin_api.services.ingest import ingest_webhook
 from paytwin_api.services.scenario_forecast import scenario_forecast
@@ -110,7 +110,7 @@ def inject(scenario: str, body: ChaosBody,
         if index % 250 == 0:
             db.commit()
     spec = SCENARIO_SPECS[scenario]
-    db.add(SimScenario(
+    scenario_row = SimScenario(
         organization_id=p.organization_id, merchant_id=merchant.id, kind=scenario,
         seed=seed, start_at=start, end_at=start + timedelta(minutes=body.duration_min),
         cohort_issuer=spec.cohort.get("issuer"), cohort_method=spec.cohort.get("method"),
@@ -120,7 +120,23 @@ def inject(scenario: str, body: ChaosBody,
         true_excess_failures=len(res.truth),
         true_rar_paise=sum(row["amount_paise"] for row in res.truth),
         true_top_cause={"kind": scenario, "cohort": spec.cohort},
-    ))
+    )
+    db.add(scenario_row)
+    # Link a run only to an already-open incident for the same cohort. This
+    # preserves a coherent Scenario Lab → War Room journey without relabelling
+    # unrelated detector evidence.
+    linked = None
+    active = (db.query(Incident)
+              .filter(Incident.organization_id == p.organization_id,
+                      Incident.merchant_id == merchant.id,
+                      Incident.state.notin_(("RESOLVED", "POSTMORTEM")))
+              .order_by(Incident.detected_at.desc()).all())
+    for incident in active:
+        cohort = incident.cohort()
+        if all(cohort.get(key) == value for key, value in spec.cohort.items()):
+            incident.scenario_ref = scenario
+            linked = incident
+            break
     publish_outbox(db, p.organization_id, "chaos_injected",
                    {"scenario": scenario, "merchant": merchant.id,
                     "events_ingested": ingested})
@@ -128,6 +144,7 @@ def inject(scenario: str, body: ChaosBody,
     return {"scenario": scenario, "merchant": merchant.id,
             "seed": seed, "mode": "SANDBOX_INJECTION",
             "events_generated": len(res.events), "events_ingested": ingested,
+            "linked_incident": (linked.human_id if linked is not None else None),
             "ground_truth_rows": len(res.truth), "forecast": forecast,
             "ground_truth": {"true_excess_failures": len(res.truth),
                                "true_rar_paise": sum(row["amount_paise"] for row in res.truth),

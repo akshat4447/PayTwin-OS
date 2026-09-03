@@ -15,10 +15,10 @@ the 4 raw files, hand them off (see §1a) — trimming, cropping and slicing
 them into the exact pieces Jitter needs is done with `ffmpeg`, not by hand.
 
 All money figures below were re-verified against a fresh
-`PAYTWIN_DEMO_RESET=1 PAYTWIN_SEED=42` run on 2026-09-02 and matched the
-master plan byte-for-byte (58 treatment / 62 control, ₹25,200 gross,
-₹16,556.13 incremental gross, ₹20.30 cost, ₹16,535.83 net, 95% interval
-₹8,676.93–₹24,394.73). Every button label and "wait for" string referenced
+`PAYTWIN_DEMO_RESET=1 PAYTWIN_SEED=42` run on 2026-09-03. The batch contains
+only failed or timed-out payment groups (56 treatment / 64 control, ₹24,360
+gross, ₹16,275 incremental gross, ₹19.60 cost, ₹16,255.40 net, 95% interval
+₹8,653.13–₹23,857.67). Every button label and "wait for" string referenced
 below exists verbatim in the current `apps/web/index.html`. Nothing here is
 guessed.
 
@@ -53,12 +53,17 @@ a while, your session may be close to expiring. Before you start capturing,
 open `http://127.0.0.1:8011/#key=<your risk_admin key>` once in the tab
 you'll record from — this re-establishes a fresh 8-hour session and scrubs
 the key back out of the URL automatically. If you don't have that key handy,
-check wherever you saved it when you first seeded `recording.db` (it's
-printed once to stdout at seed time and never stored in recoverable form —
-if it's truly lost, re-seed with `PAYTWIN_DEMO_RESET=1 PAYTWIN_SEED=42
-PAYTWIN_DEMO_URL=sqlite:///$(pwd)/data/recording.db make demo`, which is
-fully deterministic and will reproduce the exact same INC-2481 / recovery
-batch story).
+use the private local recording prompt created for this workspace. If it is
+truly lost, rebuild the workspace and save the newly printed one-time key:
+
+```bash
+PAYTWIN_DEMO_RESET=1 PAYTWIN_SEED=42 PAYTWIN_DEMO_HOURS=1.5 \
+  PAYTWIN_DATABASE_URL=sqlite:///$(pwd)/data/recording.db \
+  ./.venv/bin/python -m paytwin_sim.demo
+```
+
+This is fully deterministic and reproduces the same INC-2481 / recovery
+batch story.
 
 ### 0.2 The one thing that can ruin a retake
 
@@ -72,17 +77,15 @@ in-memory model that never touches merchant data (the UI says so directly:
 through Take 1.** It calls a real chaos-injection endpoint
 (`POST /api/chaos/surge_bank_failure`) that adds genuine synthetic events to
 the live database. It targets the same cohort as INC-2481 (issuer HDFC ×
-method upi_intent), so a second click won't open a *different* incident, but
-it will grow the affected-payment count and RaR numbers on screen a little
-more each time — meaning if you click it three times while rehearsing, the
-numbers you see later in Take 1 (War Room) will be visibly bigger than what's
-in this guide.
+method upi_intent), so it preserves the same Scenario Lab → War Room lineage.
+A second click still adds more synthetic events and changes the affected-payment
+count and RaR values. Do not use an altered workspace for a retake: rebuild
+`data/recording.db` with the command in §0.1 first.
 
 **Rule: rehearse Take 1 up to and including hovering over `Introduce
 scenario events`, but do not click it until the take you intend to keep.**
-If you flub anything in Take 1 *after* that click, you have to restart the
-whole take — and re-click the injection — which is fine once or twice, but
-don't rehearse that way; rehearse only up to the hover.
+If you flub anything after that click, rebuild the recording workspace before
+the retake; do not stack scenario injections while rehearsing.
 
 The local Razorpay lifecycle (inside Take 4 — create order → capture →
 verify → fulfil) is safe to repeat too: each run creates a brand-new order,
@@ -192,9 +195,9 @@ pause.
 forecast…" → "The War Room is scoped to incident INC-2481, not a
 portfolio-wide guess…"
 
-**If you flub this one:** restarting means re-clicking the injection. Fine
-once or twice (same cohort, numbers just tick up), not something to do
-repeatedly.
+**If you flub this one:** rebuild the recording workspace before restarting
+the take. Do not stack another injection on top of this run: the cohort stays
+the same, but the measured figures would no longer match the canonical batch.
 
 ### Take 2 — `take2_ai_judgment.mp4` (edit: 01:50–02:14, ~24s)
 
@@ -204,7 +207,7 @@ one in the final film, so there's nothing to club it with.*
 1. Click **`Why this action?`** once. Wait for the **complete** answer and
    tool trace — don't cut mid-stream.
 2. Click **`Retry everything now`** once. Wait for the refusal (should cite
-   `max_attempts` or `dnd_window_ok`). Hold 2s.
+   `amount_cap` and the full-cohort exposure). Hold 2s.
 3. Click **`Policies`** in the sidebar, let it settle. **Stop.**
 
 *Narration cue:* "I ask why this action was chosen… Then I ask to retry
@@ -254,7 +257,7 @@ mistake anywhere just means restarting this one take.*
 10. Hold on **`Latest lift`**, **`Net incremental GMV`**, **`Sampled
     payments`**.
 11. Scroll to **`Latest recovery batch proof`** / **`Why not a payment
-    optimizer alone?`** Hold until 58/62, cost, net GMV and interval are all
+    optimizer alone?`** Hold until 56/64, cost, net GMV and interval are all
     readable — don't rush it, this is the film's core financial proof.
 12. Click **`Download batch report`**. End on the in-app modal — never the
     browser's downloads shelf.
@@ -265,7 +268,7 @@ mistake anywhere just means restarting this one take.*
 14. Navigate **Model Health**, hold on version/calibration/pipeline. Click
     **`View benchmark`**, hold frozen-seed label + thresholds. `[clip 10]`
 15. Navigate **Audit Explorer**, hold on records + chain-integrity. If
-    visible, click **`Verify chain`**, wait for the verified toast. `[clip 11]`
+    visible, click **`Verify audit integrity`**, wait for the verified toast. `[clip 11]`
 16. **Do not export or download anything here. Stop.**
 
 **Prefer a shorter take?** Split Take 4 at the natural checkpoint after step
@@ -343,14 +346,14 @@ master plan:
 
 | Figure | Value |
 | --- | --- |
-| Treatment / control | 58 / 62 |
-| Treatment recoveries | 30 |
-| Gross treatment recovery | ₹25,200 |
-| Recovery rate, treatment / control | 51.7% / 17.7% |
-| Incremental gross recovery | ₹16,556.13 |
-| Intervention cost | ₹20.30 |
-| **Net incremental GMV** | **₹16,535.83** |
-| 95% interval | ₹8,676.93 – ₹24,394.73 |
+| Treatment / control | 56 / 64 |
+| Treatment recoveries | 29 |
+| Gross treatment recovery | ₹24,360 |
+| Recovery rate, treatment / control | 51.8% / 17.2% |
+| Incremental gross recovery | ₹16,275 |
+| Intervention cost | ₹19.60 |
+| **Net incremental GMV** | **₹16,255.40** |
+| 95% interval | ₹8,653.13 – ₹23,857.67 |
 | Policy-violating executions | 0 |
 
 If anything on screen doesn't match this table, something in the recording

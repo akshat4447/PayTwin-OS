@@ -124,6 +124,7 @@ def results(db: Session, experiment: Experiment) -> dict:
     return {
         "experiment_id": experiment.id, "name": experiment.name,
         "n": {"control": c_n, "treatment": t_n},
+        "recovered": {"control": c_rec, "treatment": t_rec},
         "recovery_rate": {"control": round(p_c, 4), "treatment": round(p_t, 4)},
         "lift_abs": round(lift_abs, 4),
         "lift_rel": round(lift_abs / p_c, 4) if p_c else None,

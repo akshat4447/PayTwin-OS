@@ -75,7 +75,7 @@ Layout:
   01 Detect — "Find the failing cohort before revenue is lost"
   02 Recover — "Choose a bounded, compliant intervention"
   03 Prove — "Measure net incremental GMV against control"
-- On the right, create a 492 × 398 main panel at x1316 y260. Header: "Recovery batch · RB-20260830-01", with green status chip "COMPLETED". Show a large metric "₹16.5K" with label "net incremental GMV". Under it show three small metrics: "58 treated", "62 control", "95% CI ₹8.7K–₹24.4K". Footer row: "0 unsafe executions" with green check and "AUD-REC-5001" in mono.
+- On the right, create a 492 × 398 main panel at x1316 y260. Header: "Recovery batch · RBR-INC-2481", with green status chip "COMPLETED". Show a large metric "₹16.3K" with label "net incremental GMV". Under it show three small metrics: "56 treated", "64 control", "95% CI ₹8.65K–₹23.86K". Footer row: "0 unsafe executions" with green check and "AUD-REC-5001" in mono.
 
 FRAME 02 — "02 — Revenue risk"
 Purpose: Explain the business problem quickly and concretely.
@@ -85,7 +85,7 @@ Layout:
 - Headline: "Revenue loss rarely happens in one clean step."
 - Subtitle: "A payment degrades, a customer abandons checkout, a mandate fails, or an invoice goes overdue. By the time a generic alert fires, the recovery window may already be closing."
 - Across the lower two-thirds, three equal evidence cards (about 520 × 310), with small numbered chips and simple editable line icons:
-  Card 01 title "Payment degradation" body "A healthy route becomes unreliable for one issuer × method cohort." Metric row: "97.3% → 80.0%" with danger delta "−17.3 pts".
+  Card 01 title "Payment degradation" body "A healthy route becomes unreliable for one issuer × method cohort." Metric row: "94.7% → 85.5%" with danger delta "−9.2 pts".
   Card 02 title "Checkout abandonment" body "A payment intent is created but recovery depends on a timely, consented follow-up." Metric row: "Recovery window" value "15 min".
   Card 03 title "Mandate failure" body "A subscription debit fails; the right retry timing matters more than retrying every customer." Metric row: "Customer friction" value "bounded".
 - At bottom left, a small gray mono note: "Signals are cohort-scoped; no portfolio-wide action is inferred from one symptom."
@@ -98,7 +98,7 @@ Layout:
 - Headline: "AI ranks and explains. Policy authorizes. Code executes."
 - Subtitle: "PayTwin uses an evidence-grounded agent for diagnosis and action ranking. A deterministic policy engine evaluates constraints; the executor can only run an approved, idempotent workflow."
 - Below, create a 3-column sequential flow with connectors:
-  A. "AI Commander" badge "READ ONLY". Title "Rank the right intervention". Body "Uses incident evidence, cohort health, expected lift, and confidence. Abstains below the evidence threshold." Footer chips: "confidence 0.78", "INC-2481", "evidence cited".
+  A. "AI Commander" badge "READ ONLY". Title "Rank the right intervention". Body "Uses incident evidence, cohort health, expected lift, and confidence. Abstains below the evidence threshold." Footer chips: "confidence 1.00", "INC-2481", "evidence cited".
   B. "Policy Engine" badge "AUTHORITATIVE". Title "Allow only a bounded action". Body "Checks consent, quiet hours, retry and value caps, provider health, merchant scope, approvals, and idempotency." Footer chips: "RP-014", "all checks pass".
   C. "Recovery Executor" badge "IDEMPOTENT". Title "Issue, observe, and recover". Body "Creates one treatment action for an assigned customer; handles failure states, stopping rules, cancellation, and rollback." Footer chips: "ACT-5001", "audit recorded".
 - Add a strong narrow warning band at the bottom: red soft background, red left border, title "Autonomy stops when evidence or policy is missing." Subtext: "The system fails closed — it does not create or retry a recovery action."
@@ -116,10 +116,10 @@ Layout:
   04 "Measure" — "Treatment is compared only with its control group."
 - Under the steps, place a full-width panel split 60/40:
   Left: "Payment Link" and a mono trace block:
-    link_id: plink_RB01_058
+    link_id: plink_RBR-INC-2481-056
     assignment: treatment
-    amount: ₹1,250
-    idempotency: rb01-058-v1
+    amount: ₹840
+    idempotency: rbr-inc-2481-056-v1
     state: paid
   Right: "Webhook outcome" with a green verification status, then "payment_link.paid", "signature verified", "delivered once", "audit event EVT-88412".
 - Bottom right provenance chip: "Local Test Mode · Razorpay-shaped lifecycle".
@@ -137,7 +137,7 @@ Layout:
   "Provider health" — "Stop immediately when connector health is outside the safe band."
   "Cancellation & rollback" — "Cancel open work and roll back a runtime action when a guard trips."
 - Large policy comparison panel below: three 1/3 width PolicyCards.
-  Recommended (green): eyebrow "RECOMMENDED · RP-014" title "Bounded reroute · 18%" body "Move only the affected cohort to an approved alternate path." outcome "+₹29.9K p50 · within policy".
+  Recommended (green): eyebrow "RECOMMENDED · RP-014" title "Bounded payment-link recovery" body "Issue only to pre-assigned failed payment groups within the approved cap." outcome "56 treatment / 64 control · measured later".
   Review (neutral): eyebrow "REVIEW" title "Wait and observe" body "Preserves the current route but leaves the affected cohort exposed." outcome "risk rises".
   Blocked (red): eyebrow "BLOCKED · POLICY" title "Full portfolio reroute · 65%" body "Higher theoretical recovery, but exceeds the merchant blast-radius cap by 3.6×." outcome "Blocked before execution".
 
@@ -163,15 +163,15 @@ Layout:
 - Headline: "Safe recovery, proven in net GMV."
 - Subtitle: "A completed canonical recovery batch provides the business proof: controlled treatment, attributable outcomes, known costs, and a traceable audit record."
 - Use one 4-column metric strip in large white cards:
-  "Net incremental GMV" value "₹16,535.83" helper "after ₹20.30 action cost"
-  "Recovery rate" value "51.7%" helper "vs 17.7% control"
-  "Confidence interval" value "₹8.7K–₹24.4K" helper "95% interval"
+  "Net incremental GMV" value "₹16,255.40" helper "after ₹19.60 action cost"
+  "Recovery rate" value "51.8%" helper "vs 17.2% control"
+  "Confidence interval" value "₹8.65K–₹23.86K" helper "95% interval"
   "Unsafe executions" value "0" helper "policy-fail closed"
 - Below, left 2/3 panel: heading "Causal proof, not a vanity metric." Table with rows:
-  "Treatment / control" = "58 / 62"
-  "Incremental gross recovery" = "₹16,556.13"
-  "Recovery cost" = "₹20.30"
-  "Net incremental GMV" = "₹16,535.83"
+  "Treatment / control" = "56 / 64"
+  "Incremental gross recovery" = "₹16,275"
+  "Recovery cost" = "₹19.60"
+  "Net incremental GMV" = "₹16,255.40"
   "Stopping events" = "0 unsafe; rollback path verified"
 - Right 1/3 panel: heading "Audit-ready" with a vertical check list:
   "Assignment locked before action"

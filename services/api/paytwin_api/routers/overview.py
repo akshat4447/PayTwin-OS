@@ -11,6 +11,7 @@ from paytwin_api.deps import current_principal, err, get_db
 from paytwin_api.models import (
     ActionExecution,
     AuditRecord,
+    Experiment,
     Incident,
     Merchant,
     Payment,
@@ -139,13 +140,43 @@ def funnel(p: Principal = Depends(current_principal), db: Session = Depends(get_
     if mer_id:
         q = q.filter(Payment.merchant_id == mer_id)
     pays = q.all()
-    # v1 funnel is outcome-based; checkout-stage events arrive with the web SDK later
+    completed = sum(1 for r in pays if r.status == "success")
+    failed = sum(1 for r in pays if r.status in ("failed", "timeout"))
+    latest_query = db.query(Experiment).filter(
+        Experiment.organization_id == p.organization_id)
+    if mer_id:
+        latest_query = latest_query.filter(Experiment.merchant_id == mer_id)
+    latest = latest_query.order_by(Experiment.started_at.desc()).first()
+    recovery = None
+    if latest is not None:
+        from paytwin_api.services.experiments import results as experiment_results
+
+        measured = experiment_results(db, latest)
+        recovery = {
+            "batch_id": (latest.config or {}).get("recovery_batch_id") or latest.id,
+            "eligibility": (latest.config or {}).get("eligibility") or "recorded cohort",
+            "sampled_payments": sum(measured["n"].values()),
+            "n": measured["n"],
+            "recovered": measured["recovered"],
+            "recovery_rate": measured["recovery_rate"],
+            "net_incremental_paise": measured["net_incremental_paise"],
+            "net_incremental_ci95_paise": measured["net_incremental_ci95_paise"],
+            "audit_refs": measured["audit_refs"],
+        }
     return {"stages": [
         {"stage": "initiated", "count": len(pays)},
-        {"stage": "completed", "count": sum(1 for r in pays if r.status == "success")},
-        {"stage": "failed_or_timeout",
-         "count": sum(1 for r in pays if r.status in ("failed", "timeout"))},
-    ]}
+        {"stage": "completed", "count": completed},
+        {"stage": "failed_or_timeout", "count": failed},
+    ],
+        "completion_rate_bp": int(completed * 10000 / len(pays)) if pays else 10000,
+        "failed_or_timeout": failed,
+        "pending": max(0, len(pays) - completed - failed),
+        "eligible_failed_payment_groups": len({
+            r.group_id for r in pays
+            if r.status in ("failed", "timeout") and r.group_id
+        }),
+        "recovery": recovery,
+    }
 
 
 @router.get("/api/healthmap")

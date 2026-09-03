@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -79,7 +80,9 @@ def classify_intent(text: str) -> dict:
         if re.search(pat, low):
             m = re.search(r"INC-\d+", text.upper())
             return {"kind": "action", "action_kind": kind,
-                    "target": m.group(0) if m else None}
+                    "target": m.group(0) if m else None,
+                    "scope_mode": ("all" if re.search(
+                        r"\b(?:all|every\w*)\b", low) else "bounded")}
     if re.search(r"\b(how much|money recovered|recovered|recovery value|net incremental)\b", low):
         return {"kind": "recovery_proof"}
     if re.search(r"\binc-\d+", low):
@@ -307,13 +310,30 @@ def _draft_and_evaluate(db: Session, org_id: str, intent: dict,
         return (f"The incident merchant is unavailable; no request was drafted. [{eid}]",
                 {"decision": "none"})
     rules, _policy_label = active_rules(db, org_id, merchant)
+    evidence = ((cand.params or {}).get("evidence") or {})
+    evaluation_time = datetime.now(timezone.utc)
+    if evidence.get("local_test_mode") is True and evidence.get("policy_evaluated_at"):
+        try:
+            evaluation_time = datetime.fromisoformat(str(evidence["policy_evaluated_at"]))
+        except ValueError:
+            pass
+    broad_scope = intent.get("scope_mode") == "all"
+    # "Retry everything" is not the bounded slice proposed by the twin. The
+    # policy engine must evaluate the entire affected exposure, otherwise a
+    # mass action can accidentally inherit the safe canary's amount cap.
+    amount_paise = int(cand.value_paise or 0) if broad_scope else candidate_amount(cand)
     ctx = PolicyContext(
         merchant_id=merchant.id, autonomy_mode=merchant.autonomy_mode,
-        action_kind=cand.kind, amount_paise=candidate_amount(cand),
+        action_kind=cand.kind, amount_paise=amount_paise,
         attempts_used=int(cand.params.get("attempts_used", 1)),
-        contacts_24h=int(cand.params.get("contacts_24h", 0)),
+        contacts_24h=int(evidence.get("contacts_24h", 0)),
         minutes_since_last_action=float(
-            cand.params.get("minutes_since_last_action", 9999)),
+            evidence.get("minutes_since_last_action", 0)),
+        provider_healthy=evidence.get("provider_healthy") is True,
+        consent_on_file=evidence.get("consent_on_file") is True,
+        within_mandate_window=evidence.get("within_mandate_window") is True,
+        agent_authority_verified=evidence.get("agent_authority_verified") is True,
+        now=evaluation_time,
     )
     result = evaluate(rules, ctx)
     failed = result.failed_rules
@@ -321,6 +341,9 @@ def _draft_and_evaluate(db: Session, org_id: str, intent: dict,
                      f"draft {cand.kind}: {result.decision}, failed rules: {failed}")
     lines = [f"Drafted a typed '{cand.kind}' request against {inc.human_id} "
              f"and evaluated it against the live policy set."]
+    if broad_scope:
+        lines.append("The request covered every affected payment, so policy "
+                     "evaluated the full cohort exposure rather than the bounded canary.")
     if result.decision == "allow":
         lines.append("Verdict: ALLOWED by policy - it would proceed to the "
                      "executor's idempotent flow only if submitted from the "

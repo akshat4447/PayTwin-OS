@@ -205,6 +205,15 @@ class TestTenancy:
         assert metrics["protected_paise"] >= 336_000
         assert metrics["retries_avoided"] == 4  # compatibility field remains a count
 
+    def test_funnel_reports_observed_counts_without_inventing_recovery(
+            self, client, keys, seeded):
+        body = client.get("/api/funnel?scope=mer1",
+                          headers=_h(keys["admin1"])).json()
+        assert body["completion_rate_bp"] == 9000
+        assert body["failed_or_timeout"] == 6
+        assert body["eligible_failed_payment_groups"] == 6
+        assert body["recovery"] is None
+
 
 class TestExecute:
     def test_finance_viewer_403(self, client, keys, seeded):
@@ -426,6 +435,7 @@ class TestModelsCommanderAuditReportsChaos:
         assert result["mode"] == "SANDBOX_INJECTION"
         assert result["events_ingested"] > 0
         assert result["ground_truth"]["top_cause"]["kind"] == "surge_bank_failure"
+        assert result["linked_incident"] == "INC-2481"
 
     def test_chaos_requires_write(self, client, keys, seeded):
         r = client.post("/api/chaos/issuer_outage",

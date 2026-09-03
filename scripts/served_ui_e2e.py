@@ -182,6 +182,10 @@ def main() -> int:
 
             wait_for("served workspace hydration", lambda: cdp.evaluate(
                 "window.__PTW_LIVE === true && !!document.querySelector('.app')"))
+            wait_for("canonical HDFC scenario is linked to INC-2481", lambda: cdp.evaluate(
+                "(() => { const i = (INC || []).find(x => x.id === 'INC-2481'); "
+                "return !!i && /HDFC.*upi_intent/i.test(i.cohort || '') && "
+                "i.scenarioRef === 'surge_bank_failure'; })()"))
             wait_for("credential scrubbed from browser URL", lambda: cdp.evaluate(
                 "location.search === '' && !/^#key=/.test(location.hash)"))
             cdp.evaluate("location.reload(); true")
@@ -261,6 +265,10 @@ def main() -> int:
                 "Array.from(document.querySelectorAll('.card')).find(x => x.innerText.includes('Links for 2-failure carts')).querySelector('[data-act=\"nav\"]').click(); true")
             wait_for("checkout recovery opportunity opens its live view", lambda: cdp.evaluate(
                 "document.querySelector('.page h1').innerText.includes('Checkout funnel')"))
+            wait_for("funnel renders measured failed-payment recovery", lambda: cdp.evaluate(
+                "document.body.innerText.includes('Failed-payment recovery') && "
+                "document.body.innerText.includes('Net incremental GMV') && "
+                "document.body.innerText.includes('treatment recovery')"))
             cdp.evaluate("document.querySelector('[data-p=\"policies\"]').click(); true")
             wait_for("policy replay control renders", lambda: cdp.evaluate(
                 "!!document.querySelector('[data-act=\"policyReplay\"]')"))
@@ -288,6 +296,13 @@ def main() -> int:
             if "Audit chain verified" not in audit_message:
                 raise AssertionError(f"connected audit verification failed: {audit_message}")
             print("PASS audit verification uses the connected workspace API")
+            cdp.evaluate("document.querySelector('[data-p=\"audit\"]').click(); true")
+            wait_for("Audit Explorer shows live chain-integrity state", lambda: cdp.evaluate(
+                "document.body.innerText.includes('Chain integrity · verified') && "
+                "!!document.querySelector('article.page [data-act=\"verifyAudit\"]')"))
+            cdp.evaluate("document.querySelector('[data-p=\"overview\"]').click(); true")
+            wait_for("Command Center restored after audit inspection", lambda: cdp.evaluate(
+                "document.querySelector('.page h1').innerText.includes('Organization view')"))
             cdp.evaluate("document.querySelector('[data-act=\"launchFlow\"]').click(); true")
             wait_for("operational flow opens Twin Lab", lambda: cdp.evaluate(
                 "document.querySelector('.page h1').innerText.includes('Scenario Lab')"))
@@ -301,6 +316,10 @@ def main() -> int:
             injection_message = cdp.evaluate("document.querySelector('.toastwrap').innerText")
             if "connected local workspace API" in injection_message:
                 raise AssertionError("scenario injection displayed a stale connection prompt")
+            if not cdp.evaluate(
+                    "(() => { const i = INC[S.inc] || {}; return i.id === 'INC-2481' && "
+                    "/HDFC.*upi_intent/i.test(i.cohort || ''); })()"):
+                raise AssertionError("scenario injection did not retain the linked HDFC incident")
             print("PASS connected scenario injection uses the workspace API")
 
             cdp.evaluate("document.querySelector('[data-p=\"experiments\"]').click(); true")
@@ -322,6 +341,12 @@ def main() -> int:
                     "(() => { const chat = document.querySelector('#chatbox'); const trace = document.querySelector('#trace'); const selected = (INC[S.inc] || INC[0] || {}).id || ''; return !!chat && !!trace && !!selected && chat.innerText.includes(selected) && trace.innerText.includes(selected); })()"):
                 raise AssertionError("Commander response or trace did not retain the selected incident")
             print("PASS Commander keeps its selected incident in the answer")
+            cdp.evaluate("document.querySelector('[data-q=\"Retry everything now\"]').click(); true")
+            wait_for("Commander blocks an unbounded retry through policy", lambda: cdp.evaluate(
+                "(() => { const chat = document.querySelector('#chatbox'); return !!chat && "
+                "chat.innerText.includes('Verdict: BLOCKED') && "
+                "chat.innerText.includes('full cohort exposure') && "
+                "chat.innerText.includes('amount_cap'); })()"))
             cdp.evaluate("document.querySelector('[data-q=\"How much was recovered?\"]').click(); true")
             wait_for("Commander reports recovery money proof instead of a payment count", lambda: cdp.evaluate(
                 "(() => { const chat = document.querySelector('#chatbox'); return !!chat && chat.innerText.includes('net incremental GMV'); })()"))

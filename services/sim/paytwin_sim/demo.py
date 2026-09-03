@@ -169,7 +169,7 @@ def seed_world(db) -> dict:
 
 def seed_history(db, org_id: str, seed: int = 42, hours: float | None = None,
                  only: tuple[str, ...] | None = None) -> dict:
-    """Generate + ingest history; inject issuer_outage on mgro @~⅓ of the span.
+    """Generate + ingest history; inject the flagship surge on mgro @~⅓ of the span.
 
     `hours` shrinks every merchant's span and `only` restricts merchants —
     test knobs only; the production default remains 3h across all four specs.
@@ -191,7 +191,11 @@ def seed_history(db, org_id: str, seed: int = 42, hours: float | None = None,
     for mid, _n, _s, _c, _i, _m, _st, scale, spec_hours in MERCHANT_SPECS:
         if only and mid not in only:
             continue
-        scen = ["issuer_outage"] if mid == "mgro" else []
+        # The recording story forecasts and injects this exact compound
+        # scenario. Seeding it here makes INC-2481, its RCA evidence, and the
+        # Scenario Lab one coherent lineage instead of allowing an unrelated
+        # organic cohort to win the detector sweep.
+        scen = ["surge_bank_failure"] if mid == "mgro" else []
         res = generate(mid, hours=spec_hours if hours is None else hours,
                        seed=seed, start=start, scenarios=scen,
                        scenario_start_offset_min=scen_offset, tpm_scale=scale)
@@ -262,7 +266,13 @@ def run_flagship(db, org_id: str, seed: int = 42) -> dict:
     lift, and leaves both a blocked and an automatically rolled-back action in
     the audit trail.  Every dashboard value can therefore be traced to this run.
     """
-    from paytwin_api.models import ActionCandidate, AuditRecord, Merchant, Payment
+    from paytwin_api.models import (
+        ActionCandidate,
+        AuditRecord,
+        IncidentEvidence,
+        Merchant,
+        Payment,
+    )
     from paytwin_api.services import experiments as exp_svc
     from paytwin_api.services import executor, incident_service
     from paytwin_api.services.audit import verify_chain
@@ -276,6 +286,20 @@ def run_flagship(db, org_id: str, seed: int = 42) -> dict:
     if not opened:
         raise RuntimeError("flagship outage was not detected - investigate")
     inc = opened[0]
+    expected_cohort = {"issuer": "HDFC", "method": "upi_intent"}
+    if any(inc.cohort().get(key) != value for key, value in expected_cohort.items()):
+        raise RuntimeError(
+            "flagship detector did not select the compound HDFC × UPI intent cohort"
+        )
+    inc.scenario_ref = "surge_bank_failure"
+    db.add(IncidentEvidence(
+        incident_id=inc.id,
+        kind="scenario",
+        ref="scenario.surge_bank_failure",
+        summary=("Incident lineage: fixed-seed 4× traffic surge with "
+                 "HDFC × UPI intent degradation."),
+        weight=2.0,
+    ))
     merchant = db.query(Merchant).filter_by(id=inc.merchant_id).one()
     if (merchant.config or {}).get("connector") != "razorpay":
         merchant.config = {**(merchant.config or {}), "connector": "razorpay"}
@@ -291,6 +315,7 @@ def run_flagship(db, org_id: str, seed: int = 42) -> dict:
     # execution reference nor a Payment Link.
     groups = [gid for (gid,) in (db.query(Payment.group_id)
                                  .filter(Payment.merchant_id == merchant.id,
+                                         Payment.status.in_(("failed", "timeout")),
                                          Payment.group_id.is_not(None))
                                  .order_by(Payment.group_id.asc()).distinct()
                                  .limit(120).all())]
@@ -301,6 +326,7 @@ def run_flagship(db, org_id: str, seed: int = 42) -> dict:
         db, org_id, merchant.id, f"{inc.human_id} recovery batch", incident_id=inc.id,
         config={"recovery_batch_id": batch_ref, "analysis": "treatment_vs_control",
                 "attribution_window_min": 30, "provenance": "LOCAL_RAZORPAY_TEST",
+                "eligibility": "failed_or_timeout_payment_groups",
                 "assignment": "deterministic_sha256_50_50",
                 "assignment_seed":
                     f"paytwin-recovery-v1:seed-{seed}:canonical-assignment"},

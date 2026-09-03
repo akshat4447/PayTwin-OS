@@ -17,13 +17,13 @@ The judge should be able to answer all four evaluation questions before the fina
 
 The final business claim is deliberately narrow and defensible:
 
-- 58 treatment payments and 62 control payments.
-- 30 treatment recoveries worth ₹25,200 gross treatment recovery.
-- 51.7% treatment recovery versus 17.7% control recovery.
-- ₹16,556.13 incremental gross recovery.
-- ₹20.30 intervention cost.
-- ₹16,535.83 net incremental GMV.
-- 95% net interval: ₹8,676.93 to ₹24,394.73.
+- 56 treatment payments and 64 control payments.
+- 29 treatment recoveries worth ₹24,360 gross treatment recovery.
+- 51.8% treatment recovery versus 17.2% control recovery.
+- ₹16,275 incremental gross recovery.
+- ₹19.60 intervention cost.
+- ₹16,255.40 net incremental GMV.
+- 95% net interval: ₹8,653.13 to ₹23,857.67.
 - Zero policy-violating executions.
 
 Do not call this a live Razorpay account or a production deployment. The accurate, stronger statement is: **production-grade architecture and safety controls exercised through credential-free Razorpay local Test Mode**.
@@ -35,12 +35,12 @@ Check Figma frame `07 — Business proof` before export. The precise values must
 The arithmetic must read:
 
 ```text
-₹16,556.13 incremental gross recovery
-−    ₹20.30 intervention cost
-= ₹16,535.83 net incremental GMV
+₹16,275 incremental gross recovery
+−    ₹19.60 intervention cost
+= ₹16,255.40 net incremental GMV
 ```
 
-Keep the 95% interval `₹8,676.93–₹24,394.73`. Never mix the older month-to-date placeholder values with this canonical recovery batch.
+Keep the 95% interval `₹8,653.13–₹23,857.67`. Never mix the older month-to-date placeholder values with this canonical recovery batch.
 
 ## 3. Editorial rules
 
@@ -85,7 +85,7 @@ The following is the final ElevenLabs script. Keep the paragraph boundaries beca
 
 Revenue loss rarely arrives as one clean failure. It leaks through degraded payments, abandoned checkouts, failed mandates, and delayed collections, while the recovery window keeps shrinking.
 
-**Visual cue:** On “recovery window”, finish the Figma animation on `₹16.5K net incremental GMV`.
+**Visual cue:** On “recovery window”, finish the Figma animation on `₹16.3K net incremental GMV`.
 
 ### 00:12–00:27 — why the problem matters
 
@@ -126,7 +126,7 @@ Here is the judgment boundary: AI ranks and explains cited evidence. Determinist
 
 ### 01:50–02:14 — Commander explanation and refusal
 
-In AI Commander, I ask why this action was chosen. The answer stays grounded in the selected incident and exposes a read-only tool trace. Then I ask to retry everything. The system refuses because retry caps and quiet-hour rules would be violated. The LLM never moves money and never becomes the policy engine.
+In AI Commander, I ask why this action was chosen. The answer stays grounded in the selected incident and exposes a read-only tool trace. Then I ask to retry everything. The system refuses because the full-cohort request exceeds the approved value cap. The LLM never moves money and never becomes the policy engine.
 
 **Click cues:** Click `Why this action?`, wait for the complete response, then click `Retry everything now`. Stop only when the refusal and policy citations are visible.
 
@@ -170,11 +170,11 @@ Trust also requires showing what breaks. In Reliability Lab I run a known-broken
 
 ### 03:50–04:23 — money proof
 
-The final business proof is Experiments and Recovery, not a vanity metric. This batch assigned fifty-eight payments to treatment and sixty-two to control, with thirty treatment recoveries worth twenty-five thousand two hundred rupees. After the matched-control expectation and twenty rupees thirty paise of intervention cost, net incremental GMV is sixteen thousand five hundred thirty-five rupees and eighty-three paise. Its ninety-five-percent interval stays positive. The report includes sample size, costs, stopping events, and audit references.
+The final business proof is Experiments and Recovery, not a vanity metric. This batch assigned fifty-six payments to treatment and sixty-four to control, with twenty-nine treatment recoveries worth twenty-four thousand three hundred sixty rupees. After the matched-control expectation and nineteen rupees sixty paise of intervention cost, net incremental GMV is sixteen thousand two hundred fifty-five rupees and forty paise. Its ninety-five-percent interval stays positive. The report includes sample size, costs, stopping events, and audit references.
 
 **Visual cue:** Pause first on treatment/control, then net incremental GMV, then the positive interval. Click `Download batch report` and hold the in-app Recovery Batch Report modal.
 
-Use the exact numeric Figma end card for the precise interval: `₹8,676.93–₹24,394.73`.
+Use the exact numeric Figma end card for the precise interval: `₹8,653.13–₹23,857.67`.
 
 ### 04:23–04:40 — breadth and build quality montage
 
@@ -192,7 +192,7 @@ PayTwin complements Razorpay Optimizer. Optimizer chooses a route; PayTwin gover
 
 The loop judges can trust: detect the right problem, apply bounded judgment, recover safely, and prove the money.
 
-**Visual cue:** Finish on `Detect → Decide → Recover → Prove`, with `₹16,535.83 net incremental GMV` and `0 unsafe executions` still visible.
+**Visual cue:** Finish on `Detect → Decide → Recover → Prove`, with `₹16,255.40 net incremental GMV` and `0 unsafe executions` still visible.
 
 ## 6. Live browser clip specification
 
@@ -233,7 +233,7 @@ Record all browser footage as one continuous session, but save or cut it at the 
 - Click `Why this action?` once.
 - Wait for the entire answer and tool trace. Do not cut during streaming text.
 - Click `Retry everything now` once.
-- Wait until the refusal mentions `max_attempts`, `dnd_window_ok` or policy-blocked evidence.
+- Wait until the refusal explains the full-cohort exposure and cites `amount_cap` or the policy block.
 - Keep the banner `AI ranks and explains; deterministic controls decide and execute` in the establishing shot.
 - End by clicking `Policies` in the sidebar and allow the page to settle.
 - Raw target length: 30–40 seconds; edited use: 20 seconds.
@@ -300,7 +300,7 @@ Record all browser footage as one continuous session, but save or cut it at the 
 
 - Navigate to `Audit Explorer`.
 - Hold latest records and the chain-integrity state.
-- If a `Verify chain` control is visible, click it once and wait for the verified toast.
+- If the `Verify audit integrity` control is visible, click it once and wait for the verified toast.
 - Do not export files in this montage.
 - Raw target length: 8–12 seconds; edited use: 5 seconds.
 
@@ -335,7 +335,7 @@ Use a natural, senior product-builder delivery—not a trailer voice.
 - Pace: 132–138 words per minute.
 - Tone: calm conviction; slightly faster on mechanics, slower on financial proof.
 - Pause for 250–350 ms after: `INC-2481`, `fails closed`, `exactly one fulfilment`, and `net incremental GMV`.
-- Emphasize: `against a control`, `deterministic policy`, `blocked`, `zero side effects`, and `₹16,535.83`.
+- Emphasize: `against a control`, `deterministic policy`, `blocked`, `zero side effects`, and `₹16,255.40`.
 - Do not add exaggerated sound effects. Use one quiet click bed and a restrained low-volume music bed if desired.
 - Duck music by at least 8 dB beneath narration and remove it entirely during the exact money calculation.
 
@@ -347,7 +347,7 @@ Use a natural, senior product-builder delivery—not a trailer voice.
 - [ ] Top bar says `LOCAL WORKSPACE · CONNECTED`.
 - [ ] No key is present in the URL after the workspace session is established.
 - [ ] Command Center shows canonical incident data and the featured operational flow.
-- [ ] Experiments & Recovery shows 58 treatment, 62 control and positive net incremental GMV.
+- [ ] Experiments & Recovery shows 56 treatment, 64 control and positive net incremental GMV.
 - [ ] Integrations shows the four local lifecycle controls.
 - [ ] Reliability Lab shows the guided control proof.
 - [ ] Light theme is active and text contrast is readable.
@@ -451,7 +451,7 @@ CLIP 10 — 10_model_and_benchmark_montage.mp4
 Navigate to Model Health. Hold model version, calibration and promotion pipeline. Click View benchmark. Hold the frozen-seed label, measured metrics and pass thresholds.
 
 CLIP 11 — 11_audit_montage.mp4
-Navigate to Audit Explorer. Hold latest audit records and chain-integrity evidence. If a visible Verify chain control is available, click it once and wait for the verified result. Do not download or export anything.
+Navigate to Audit Explorer. Hold latest audit records and chain-integrity evidence. If the visible `Verify audit integrity` control is available, click it once and wait for the verified result. Do not download or export anything.
 
 FINAL QUALITY CHECK
 Review every clip for connection errors, loading skeletons, flicker, scroll jumps, clipped text, visible credentials and inconsistent numbers. Report the saved filename, duration, start frame, end frame and any retake needed for each clip. Do not create voiceover or Figma footage.

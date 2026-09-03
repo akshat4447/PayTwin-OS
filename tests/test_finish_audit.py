@@ -108,6 +108,7 @@ def test_flagship_artifacts_persist_to_disk(tmp_path):
     seed_world(s)
     seed_history(s, "org1", seed=7, hours=1.5, only=("mgro",))
     story = run_flagship(s, "org1", seed=7)
+    assert story["cohort"] == {"issuer": "HDFC", "method": "upi_intent"}
     assert story["execution_state"] == "SUCCEEDED"
     assert story["recovered_payments"] > 0
     assert story["net_incremental_paise"] > 0
@@ -117,6 +118,8 @@ def test_flagship_artifacts_persist_to_disk(tmp_path):
     measured = experiment_results(db=s, experiment=s.query(Experiment).one())
     assert measured["intervention_cost_paise"] > 0
     assert measured["audit_refs"]
+    assert s.query(Experiment).one().config["eligibility"] == \
+        "failed_or_timeout_payment_groups"
     s.close()
     engine.dispose()
 
