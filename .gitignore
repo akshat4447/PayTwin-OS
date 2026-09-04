@@ -13,6 +13,9 @@ services/ml/artifacts/*.json
 
 # env & secrets
 .env
+.env.local
+.env.*
+!.env.example
 *.pem
 
 # data
@@ -30,3 +33,8 @@ node_modules/
 # generated demo output
 /DEMO_RUN.md
 /RAZORPAY_TEST_MODE_DEMO.md
+
+# local recording and narration assets — never part of the source submission
+Recordings\ /
+docs/PAYTWIN_NARRATION_SCRIPT.md
+docs/PAYTWIN_BROWSER_RECORDING_LLM_PROMPT.txt

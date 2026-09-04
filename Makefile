@@ -19,6 +19,7 @@ help:
 	@echo "make served-e2e - served FastAPI + authenticated Chrome regression"
 	@echo "make loadtest  - webhook flood + API latency percentiles"
 	@echo "make verify    - audit chain verification against the demo DB"
+	@echo "make clean     - safely remove generated local artifacts (preserves recordings)"
 
 setup:
 	python3 -m venv .venv
@@ -79,4 +80,4 @@ verify:
 		$(PY) scripts/verify_audit.py
 
 clean:
-	rm -rf .pytest_cache **/__pycache__ data/*.db
+	python3 scripts/clean_generated.py
