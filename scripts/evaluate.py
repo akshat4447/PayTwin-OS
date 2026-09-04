@@ -1,12 +1,14 @@
-"""QA-001 evaluation harness — prints every number that appears in README.md §14.
+"""QA-001 evaluation harness — emits every number that appears in README.md §14.
 
 All values are MEASURED here against simulator ground truth; nothing is estimated.
-Usage: python scripts/evaluate.py   (writes /tmp/eval_numbers.json too)
+Usage: python scripts/evaluate.py --output docs/evidence/metrics_card.json
 """
 from __future__ import annotations
 
+import argparse
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import numpy as np
 
@@ -134,7 +136,7 @@ def bandit():
     return {k: round(v["reward"], 1) for k, v in scores.items()}
 
 
-def main():
+def main(output_path: str = "/tmp/eval_numbers.json"):
     out = {}
     section("Success model (holdout, seed 42)")
     out["success_model"] = m = success_model()
@@ -162,11 +164,14 @@ def main():
     out["bandit"] = b = bandit()
     print(b)
 
-    with open("/tmp/eval_numbers.json", "w") as fh:
-        json.dump(out, fh, indent=2)
-    print("\nwrote /tmp/eval_numbers.json")
+    target = Path(output_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(out, indent=2) + "\n")
+    print(f"\nwrote {target}")
 
 
 if __name__ == "__main__":
-    main()
-
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", default="/tmp/eval_numbers.json",
+                        help="path for the reproducible metrics JSON")
+    main(parser.parse_args().output)

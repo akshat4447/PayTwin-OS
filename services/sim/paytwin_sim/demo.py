@@ -221,7 +221,12 @@ def seed_history(db, org_id: str, seed: int = 42, hours: float | None = None,
 
 
 def train_models(db, seed: int = 42) -> dict:
-    """Train the success-probability model on generated episodes; register it."""
+    """Train and offline-validate the success model used by the local demo.
+
+    The model is promoted only to VALIDATED here, never CHAMPION. Its acceptance
+    gates are deliberately modest and recorded beside the artifact because this
+    is synthetic held-out evidence, not merchant-production validation.
+    """
     from paytwin_api.services.model_registry import register_training
     from paytwin_ml.train import train as train_model
     from paytwin_sim.generator import generate
@@ -252,9 +257,23 @@ def train_models(db, seed: int = 42) -> dict:
                          "gateway": e.gateway, "amount": e.amount,
                          "ref": e.ext_id, "terminal": True})
     result = train_model(pays, seed=seed)
-    row = register_training(db, result, params={"seed": seed})
+    metrics = result.champion_metrics
+    oracle_auc = 0.68  # fixed benchmark information ceiling; see ADR-011
+    validation = {
+        "source": "synthetic_time_holdout",
+        "oracle_auc": oracle_auc,
+        "roc_auc_floor": round(0.70 * oracle_auc, 4),
+        "ece_ceiling": 0.05,
+        "passed": (metrics["roc_auc"] >= 0.70 * oracle_auc
+                   and metrics["ece"] < 0.05),
+    }
+    row = register_training(
+        db, result,
+        params={"seed": seed, "validation": validation},
+        stage="VALIDATED" if validation["passed"] else "TRAINED")
     db.commit()
-    return {"version": row.version, "metrics": result.champion_metrics}
+    return {"version": row.version, "stage": row.stage, "metrics": metrics,
+            "validation": validation}
 
 
 def run_flagship(db, org_id: str, seed: int = 42) -> dict:

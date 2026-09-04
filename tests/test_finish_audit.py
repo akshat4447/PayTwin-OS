@@ -65,7 +65,7 @@ def test_candidate_kinds_are_canonical(db):
     db.add(inc)
     db.commit()
     failed = [{"epoch": 0, "failed": True, "amount": 80_000} for _ in range(40)]
-    _propose_candidates(db, inc, m, failed)
+    _propose_candidates(db, inc, m, failed, failed)
     kinds = {c.kind for c in
              db.query(ActionCandidate).filter_by(incident_id=inc.id).all()}
     assert kinds <= {k.value for k in ActionKind}, kinds

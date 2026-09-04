@@ -1,0 +1,52 @@
+{
+  "success_model": {
+    "rows": 25503,
+    "n_test": 5101,
+    "roc_auc": 0.604,
+    "pr_auc": 0.0468,
+    "brier": 0.0346,
+    "ece": 0.0023,
+    "reproducible": true
+  },
+  "detection": [
+    {
+      "scenario": "issuer_outage",
+      "detected": true,
+      "delay_min": 5
+    },
+    {
+      "scenario": "psp_degradation",
+      "detected": true,
+      "delay_min": 20
+    },
+    {
+      "scenario": "checkout_regression",
+      "detected": true,
+      "delay_min": 0
+    },
+    {
+      "scenario": "auth_failures",
+      "detected": true,
+      "delay_min": 5
+    },
+    {
+      "scenario": "rate_limit",
+      "detected": true,
+      "delay_min": 0
+    }
+  ],
+  "rca": {
+    "top1": 4,
+    "top3": 5,
+    "scenarios": 5
+  },
+  "rar": {
+    "coverage80": "5/5",
+    "median_rel_err": 0.219,
+    "point_in_interval_all": true
+  },
+  "bandit": {
+    "fixed_arm0": 56.0,
+    "linucb": 75.0
+  }
+}

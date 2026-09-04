@@ -12,9 +12,11 @@ from paytwin_api.models import (
     ActionExecution,
     AuditRecord,
     Incident,
+    IncidentEvidence,
     Merchant,
     Organization,
     Payment,
+    Prediction,
 )
 from paytwin_api.services import experiments as exp_svc
 from paytwin_api.services import executor, incident_service
@@ -103,3 +105,29 @@ class TestFlagshipJourney:
         _ingest_history(db, hours=3, scenarios=None)
         opened = incident_service.run_detection_cycle(db, "org1")
         assert opened == []
+
+    def test_validated_model_scores_and_traces_recovery_cohort(self, db):
+        """A validated artifact must affect proposals, not just sit in the registry."""
+        _seed(db)
+        _ingest_history(db, hours=3, scenarios=["issuer_outage"])
+        from paytwin_sim.demo import train_models
+
+        trained = train_models(db, seed=42)
+        assert trained["stage"] == "VALIDATED"
+        opened = incident_service.run_detection_cycle(db, "org1")
+        assert len(opened) == 1
+        inc = opened[0]
+        predictions = db.query(Prediction).filter_by(merchant_id="mer1").all()
+        assert predictions, "failed incident payments must receive persisted model scores"
+        assert {p.model_version for p in predictions} == {trained["version"]}
+        assert all(0.0 <= p.p_success <= 1.0 and p.features_hash for p in predictions)
+        candidate = (db.query(ActionCandidate).filter_by(incident_id=inc.id)
+                     .order_by(ActionCandidate.rank).first())
+        assert candidate is not None
+        model = candidate.params["model"]
+        assert model["status"] == "scored"
+        assert model["model_version"] == trained["version"]
+        assert candidate.params["p_success"] == model["p_success"]
+        assert candidate.params["ranking_formula"].startswith("twin_incremental_rate")
+        evidence = db.query(IncidentEvidence).filter_by(incident_id=inc.id, kind="model").all()
+        assert len(evidence) == 1 and trained["version"] in evidence[0].ref

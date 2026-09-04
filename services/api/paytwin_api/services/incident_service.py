@@ -5,6 +5,8 @@ ACTION_PROPOSED → (execution path) → MONITORING → RESOLVED.
 """
 from __future__ import annotations
 
+import hashlib
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from itertools import product
 
@@ -20,6 +22,7 @@ from paytwin_api.models import (
     IncidentEvidence,
     Merchant,
     Payment,
+    Prediction,
     RootCauseCandidate,
 )
 from paytwin_api.services import audit as audit_svc
@@ -88,9 +91,10 @@ def _payments_dicts(db: Session, merchant_id: str, hours: float = 3.0) -> tuple[
     # Anchor on the newest event: identical alignment for live traffic (~now) and
     # replayed/simulated history (which may sit entirely in past or future).
     t0 = int(max(epochs)) - int(hours * 3600)
-    pays = [{"epoch": int(e), "failed": r.status in ("failed", "timeout"),
+    pays = [{"payment_id": r.id, "epoch": int(e), "failed": r.status in ("failed", "timeout"),
              "method": r.method, "issuer": r.issuer, "psp": r.psp, "gateway": r.gateway,
-             "amount": r.amount_paise, "ref": r.payment_ref, "group_id": r.group_id}
+             "amount": r.amount_paise, "ref": r.payment_ref, "group_id": r.group_id,
+             "terminal": True}
             for r, e in zip(rows, epochs) if e >= t0]
     return pays, t0
 
@@ -340,22 +344,98 @@ def _open_incident(db: Session, m: Merchant, dims: dict, det, pays: list[dict],
 
     failed = [p for p in pays if window[0] <= p["epoch"] < window[1]
               and p["failed"] and all(p.get(k) == v for k, v in dims.items() if v)]
-    _propose_candidates(db, inc, m, failed)
+    model_info = _propose_candidates(db, inc, m, pays, failed)
     db.flush()
     audit_svc.append_audit(db, m.organization_id, actor="detector", actor_role="system",
                            action_type="incident.opened", object_type="incident",
                            object_id=inc.human_id, summary=inc.title,
                            details={"sev": sev, "rar_paise": rar.expected_paise,
-                                    "cohort": dims}, incident_id=inc.id)
+                                    "cohort": dims, "model": model_info}, incident_id=inc.id)
     return inc
 
 
 # __PART3__
 
 
-def _propose_candidates(db: Session, inc: Incident, m: Merchant, failed: list[dict]) -> None:
+def _score_failed_cohort(db: Session, m: Merchant, pays: list[dict],
+                         failed: list[dict]) -> dict:
+    """Score the incident cohort with a decision-ready trained model.
+
+    This is deliberately fail-closed from a *claim* perspective: a missing,
+    corrupt, or unvalidated artifact leaves a clearly-marked prior in place; it
+    never masquerades as a model score. Predictions are persisted with their
+    model/feature version so each candidate can be reproduced and audited.
+    """
+    fallback = {"status": "unavailable", "p_success": 0.40,
+                "reason": "no validated success model", "count": 0}
+    if not failed or not pays:
+        return {**fallback, "reason": "no failed payments in incident cohort"}
+
+    from paytwin_api.services.model_registry import runtime_model
+
+    model = runtime_model(db)
+    if model is None:
+        return fallback
+    artifact = Path(model.artifact_path or "")
+    if not artifact.is_file():
+        return {**fallback, "reason": "validated model artifact is unavailable",
+                "model_version": model.version, "feature_version": model.feature_version}
+
+    try:
+        from paytwin_ml.train import build_dataset, predict_success
+
+        # build_dataset sorts terminal rows identically; zip against that same
+        # order so a score is never attached to the wrong payment.
+        ordered = sorted((p for p in pays if p.get("terminal", True)),
+                         key=lambda p: (int(p["epoch"]), str(p.get("ref", ""))))
+        X, _, _, _ = build_dataset(ordered)
+        scores = predict_success(str(artifact), X)
+    except (KeyError, OSError, ValueError) as exc:
+        return {**fallback, "reason": f"model scoring failed: {type(exc).__name__}",
+                "model_version": model.version, "feature_version": model.feature_version}
+
+    score_by_payment: dict[str, tuple[float, str]] = {}
+    for row, score, features in zip(ordered, scores, X):
+        payment_id = row.get("payment_id")
+        if payment_id:
+            score_by_payment[payment_id] = (
+                float(score), hashlib.sha256(features.tobytes()).hexdigest())
+    cohort = [(row, score_by_payment[row["payment_id"]]) for row in failed
+              if row.get("payment_id") in score_by_payment]
+    if not cohort:
+        return {**fallback, "reason": "incident cohort could not be matched to model features",
+                "model_version": model.version, "feature_version": model.feature_version}
+
+    payment_ids = [row["payment_id"] for row, _ in cohort]
+    existing = {payment_id for (payment_id,) in db.query(Prediction.payment_id).filter(
+        Prediction.merchant_id == m.id,
+        Prediction.model_version == model.version,
+        Prediction.payment_id.in_(payment_ids)).all()}
+    for row, (score, features_hash) in cohort:
+        if row["payment_id"] not in existing:
+            db.add(Prediction(
+                organization_id=m.organization_id, merchant_id=m.id,
+                payment_id=row["payment_id"], model_version=model.version,
+                feature_version=model.feature_version, p_success=round(score, 6),
+                features_hash=features_hash,
+            ))
+    values = [score for _, (score, _) in cohort]
+    return {
+        "status": "scored", "model_name": model.name, "model_version": model.version,
+        "model_stage": model.stage, "model_kind": model.kind,
+        "feature_version": model.feature_version, "count": len(values),
+        "p_success": round(sum(values) / len(values), 4),
+        "min_p_success": round(min(values), 4), "max_p_success": round(max(values), 4),
+        "scoring_mode": "validated_success_model_conservative_weight",
+    }
+
+
+def _propose_candidates(db: Session, inc: Incident, m: Merchant, pays: list[dict],
+                        failed: list[dict]) -> dict:
     from paytwin_ml.twin import run_twin
 
+    model_info = _score_failed_cohort(db, m, pays, failed)
+    cohort_p_success = float(model_info["p_success"])
     industry = (m.config or {}).get("industry", "grocery")
     fp = [{"amount": p["amount"], "age_min": 5.0} for p in failed[:200]]
     total_value = sum(p["amount"] for p in fp)
@@ -388,16 +468,24 @@ def _propose_candidates(db: Session, inc: Incident, m: Merchant, failed: list[di
     for scen in ("retry_burst", "reroute_psp", "payment_links", "notify_customer"):
         twin = run_twin(m.id, industry, fp, scen, seed=42, trials=400,
                         alloc_pct=alloc_pct, duration_min=30)
-        p_delta = min(0.45, twin.p50_paise / max(1, total_value) + 0.02)
+        twin_delta = min(0.45, twin.p50_paise / max(1, total_value) + 0.02)
+        # The twin estimates the intervention effect; a validated per-payment
+        # success model supplies a conservative cohort propensity weight. This
+        # is not presented as causal uplift and never authorizes execution.
+        p_delta = twin_delta * cohort_p_success
         options.append(ActionOption(
             kind=TWIN_TO_KIND[scen], label=scen.replace("_", " ").title(),
             detail=(f"twin p50 +₹{twin.p50_paise / 100:,.0f} "
                     f"[₹{twin.lo_paise / 100:,.0f}–₹{twin.hi_paise / 100:,.0f}] "
-                    f"cost ₹{twin.cost_paise / 100:,.0f}"),
-            params={"count": slice_count, "p_success": 0.4,
+                    f"cost ₹{twin.cost_paise / 100:,.0f}; "
+                    f"cohort success propensity {cohort_p_success:.2f}"),
+            params={"count": slice_count, "p_success": cohort_p_success,
                     "avg_amount_paise": avg_amt, "attempts_used": 1,
                     "scenario": scen, "alloc_pct": alloc_pct,
                     "slice_value_paise": slice_value, "evidence": evidence,
+                    "model": model_info,
+                    "ranking_formula": "twin_incremental_rate × cohort_success_propensity",
+                    "twin_incremental_rate": round(twin_delta, 6),
                     "outreach_cost_paise": 35,
                     "stopping_rules": {"max_duration_min": 30,
                                        "max_provider_retries": 2,
@@ -418,6 +506,15 @@ def _propose_candidates(db: Session, inc: Incident, m: Merchant, failed: list[di
                             summary=f"Twin Monte-Carlo (400 trials, seed 42) ranked "
                                     f"{len(options)} interventions; best EV {ranked[0].label}",
                             weight=1.5))
+    if model_info["status"] == "scored":
+        db.add(IncidentEvidence(
+            incident_id=inc.id, kind="model", ref=f"model.{model_info['model_version']}",
+            summary=(f"Validated {model_info['model_kind']} scored "
+                     f"{model_info['count']} failed payments; mean success propensity "
+                     f"{model_info['p_success']:.2f} conservatively weighted candidate EV. "
+                     "Policy authority remains deterministic."),
+            weight=1.0))
+    return model_info
 
 
 def resolve(db: Session, inc: Incident, actor: str = "system") -> None:
@@ -427,4 +524,3 @@ def resolve(db: Session, inc: Incident, actor: str = "system") -> None:
                            action_type="incident.resolved", object_type="incident",
                            object_id=inc.human_id, summary=f"{inc.human_id} resolved",
                            incident_id=inc.id)
-

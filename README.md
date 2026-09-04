@@ -5,6 +5,29 @@
 > the former `docs/*` set (see `HISTORY.md` for the build chronology & decision log).
 > Status: migration head `e9f1a2b3c4d5` · run `make test` for the current suite.
 
+## Buildathon submission snapshot
+
+**Track:** AI Revenue Recovery. PayTwin detects payment revenue at risk,
+explains the affected cohort, ranks bounded recovery options, applies
+deterministic safety policy, and measures a local treatment/control batch.
+
+**What is real and reproducible in this repository**
+
+- Actual success-probability model: LogisticRegression plus isotonic
+  calibration, trained from time-separated synthetic episodes.
+- Actual runtime use: only a VALIDATED/CHAMPION artifact is loaded; it scores
+  failed incident payments, persists versioned Prediction records, and
+  conservatively weights recovery-candidate EV.
+- Actual controls: HMAC/inbox/idempotency/state-machine/audit/policy/approval
+  paths are tested end to end.
+- Honest scope: all published performance figures are fixed-seed synthetic
+  evidence, and the Razorpay surface is a local provider-shaped test harness,
+  not an account-backed integration.
+
+Read docs/BUILDATHON_SUBMISSION.md first, then run make bench and make test.
+Architecture and provider boundaries are in docs/ARCHITECTURE.md and
+docs/RAZORPAY_INTEGRATION_BOUNDARY.md.
+
 **PayTwin OS** is an autonomous **payment-resilience & revenue-intelligence platform**: it
 watches payment traffic across merchants, detects degradation, diagnoses root causes,
 quantifies revenue-at-risk, simulates candidate responses in a seeded digital twin, lets a
@@ -47,7 +70,7 @@ pip install -e packages/contracts -e services/sim -e services/ml -e services/api
 pip install pytest httpx
 
 # 2) tests (sqlite; no services needed)
-make test                        # expect: 208 passed
+make test                        # expect: current suite passes
 
 # 3) flagship demo — seeds world, ingests 3h of traffic with an injected HDFC×UPI outage,
 #    detects, decides, executes, measures, prints keys + writes DEMO_RUN.md
@@ -64,7 +87,7 @@ docker compose up --build`. Demo refuses a dirty DB — re-run with `PAYTWIN_DEM
 A DB created before migration `d8e4c2a9b517` needs `alembic stamp b47531c6f9e6` once,
 then `upgrade head`.
 
-Make targets: `setup · dev · api · worker · migrate · seed · demo · razorpay-demo · razorpay-api · test · loadtest · verify · clean`.
+Make targets: setup · dev · api · worker · migrate · seed · demo · razorpay-demo · razorpay-api · bench · test · loadtest · verify · clean.
 
 ### Credential-free Razorpay-compatible local Test Mode
 
@@ -342,7 +365,7 @@ make loadtest && make verify    # perf + audit chain
   incident refs end-to-end.
 
 ## 15) Tests & CI
-`make test` → **208 passed** (sqlite, portable schema). Layers: unit · API integration
+`make test` runs the current portable SQLite suite. Layers: unit · API integration
 (httpx ASGI: auth/RBAC/isolation/rate-limit/SSE) · pipeline (dup/late/malformed/out-of-order/
 replay/DLQ/state machine) · ML (determinism/calibration/leakage/registry) · detection/RCA/RaR
 vs ground truth · decisioning (optimizer floor, policy blocks, duplicate execution, autonomy
@@ -389,13 +412,14 @@ anthropic` (+`PAYTWIN_LLM_API_KEY`) · `PAYTWIN_WORKER_INTERVAL=30` ·
 `PAYTWIN_DEMO_RESET` / `PAYTWIN_SEED` / `PAYTWIN_DEMO_URL` (demo controls).
 
 ## 19) Known limitations (honest)
-Neural backbones (FT-Transformer/TabPFN/TimesFM/GNN) stubbed behind ModelBackend — CPU-only
-box; measured baselines shipped instead. Single-node scale measured (~1.2k ev/s); 10K-merchant
-design documented, not benchmarked. Razorpay connector sandbox-ready (no production keys).
+Neural backbones (FT-Transformer/TabPFN/TimesFM/GNN) are not shipped; measured
+baselines are. Single-node scale is measured; 10K-merchant design is documented,
+not benchmarked. The Razorpay surface is a local provider-shaped test harness,
+not an account-backed connector.
 Auth is API-key based; SSO/OIDC future. Postgres rollups (ClickHouse path documented).
-Razorpay support is Test Mode ingress and verification only: external order creation, refund creation,
-Downtime API polling, settlement reconciliation, and any real money execution are intentionally out
-of scope for this build.
+Razorpay support is local lifecycle ingress and verification only: external order
+creation, refund creation, Downtime API polling, settlement reconciliation, and
+any real money execution are intentionally out of scope for this build.
 Hosted LLM optional; deterministic composer default. Headless-Chrome smoke instead of full
 Playwright suite. All product metrics are simulator-derived and labeled SIMULATION in-app.
 Demo admission is time-aware: IST quiet hours can approval-gate the best candidate (reported
